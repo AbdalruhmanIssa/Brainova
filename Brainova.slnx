@@ -1,0 +1,5 @@
+<Solution>
+  <Project Path="Brainova.BLL/Brainova.BLL.csproj" Id="55064e55-89d3-43c3-8f64-c1fa7ffc991d" />
+  <Project Path="Brainova.DAL/Brainova.DAL.csproj" Id="485d6b5d-c0c9-47a6-b06c-87cf0b3a2614" />
+  <Project Path="Brainova.PL/Brainova.PL.csproj" />
+</Solution>

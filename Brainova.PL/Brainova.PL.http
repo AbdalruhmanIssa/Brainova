@@ -1,0 +1,6 @@
+@Brainova.PL_HostAddress = http://localhost:5085
+
+GET {{Brainova.PL_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

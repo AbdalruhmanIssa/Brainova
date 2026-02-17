@@ -29,11 +29,12 @@ namespace Brainova.PL.Areas.Identity.Controllers
 
         // ✅ Admin + SuperAdmin
         [HttpPatch("block/{userId}")]
-        public async Task<IActionResult> Block([FromRoute] string userId)
+        public async Task<IActionResult> Block(string userId)
         {
-            var ok = await _userService.BlockUserAsync(userId);
-            return ok ? Ok(true) : NotFound(false);
+            await _userService.BlockUserAsync(userId);
+            return Ok(new { message = "User blocked successfully" });
         }
+
 
 
         // ✅ Admin + SuperAdmin

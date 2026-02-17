@@ -1,4 +1,5 @@
 ﻿using Brainova.BLL.DTOs.Auth;
+using Brainova.BLL.Exceptions;
 using Brainova.BLL.Services.Interface;
 using Brainova.DAL.Modles;
 using Brainova.DAL.Repositories.Interface;
@@ -6,9 +7,6 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.UI.Services;
 using Microsoft.EntityFrameworkCore;
-using System;
-using System.Collections.Generic;
-using System.Text;
 
 namespace Brainova.BLL.Services.Classes
 {
@@ -78,8 +76,6 @@ namespace Brainova.BLL.Services.Classes
         public Task<bool> IsBlockedAsync(string userId) => _userRepository.IsBlockedAsync(userId);
         public Task<bool> ChangeUserRoleAsync(string userId, string roleName) => _userRepository.ChangeUserRoleAsync(userId, roleName);
 
-        // ===== Create methods (Option A) =====
-
         public Task<string> CreateSupervisorAsync(CreateUserRequest request, HttpRequest httpRequest)
             => CreateUserWithRoleAndSetPasswordEmailAsync(request, "Supervisor", httpRequest);
 
@@ -91,12 +87,11 @@ namespace Brainova.BLL.Services.Classes
             string roleName,
             HttpRequest httpRequest)
         {
-            // Basic uniqueness checks (same as your Silverhand style)
             if (await _userManager.FindByEmailAsync(request.Email) != null)
-                throw new Exception("Email already exists");
+                throw new BadRequestException("Email already exists");
 
             if (await _userManager.FindByNameAsync(request.UserName) != null)
-                throw new Exception("Username already exists");
+                throw new BadRequestException("Username already exists");
 
             var user = new ApplicationUser
             {
@@ -104,21 +99,17 @@ namespace Brainova.BLL.Services.Classes
                 Email = request.Email,
                 PhoneNumber = request.PhoneNumber,
                 UserName = request.UserName,
-                EmailConfirmed = true, // ✅ created by admin, we treat it as verified
+                EmailConfirmed = true,
                 IsBlocked = false
             };
 
-            // Create user + add role (repo)
             var (success, message, createdUser) = await _userRepository.CreateUserWithRoleAsync(user, roleName);
             if (!success || createdUser == null)
-                throw new Exception(message);
+                throw new BadRequestException(message);
 
-            // Generate reset token to set password
             var token = await _userManager.GeneratePasswordResetTokenAsync(createdUser);
             var tokenEscaped = Uri.EscapeDataString(token);
 
-            // Email link should go to FRONTEND later.
-            
             var link =
                 $"{httpRequest.Scheme}://{httpRequest.Host}/api/Identity/Auths/set-password?userId={createdUser.Id}&token={tokenEscaped}";
 
@@ -133,6 +124,7 @@ namespace Brainova.BLL.Services.Classes
 
             return $"{roleName} created successfully. Set-password email sent.";
         }
+
         public async Task<List<SupervisorOptionResponse>> GetSupervisorsAsync()
         {
             var users = await _userRepository.GetSupervisorsAsync();
@@ -157,21 +149,21 @@ namespace Brainova.BLL.Services.Classes
         public async Task<string> AssignSupervisorAsync(AssignSupervisorRequest request)
         {
             var student = await _userManager.FindByIdAsync(request.StudentUserId);
-            if (student is null) throw new Exception("Student not found");
+            if (student is null) throw new NotFoundException("Student not found");
 
             var supervisor = await _userManager.FindByIdAsync(request.SupervisorUserId);
-            if (supervisor is null) throw new Exception("Supervisor not found");
+            if (supervisor is null) throw new NotFoundException("Supervisor not found");
 
             var studentRoles = await _userManager.GetRolesAsync(student);
             if (!studentRoles.Contains("Student"))
-                throw new Exception("Target user is not a Student");
+                throw new BadRequestException("Target user is not a Student");
 
             var supRoles = await _userManager.GetRolesAsync(supervisor);
             if (!supRoles.Contains("Supervisor"))
-                throw new Exception("Target user is not a Supervisor");
+                throw new BadRequestException("Target user is not a Supervisor");
 
             var ok = await _userRepository.AssignSupervisorAsync(request.StudentUserId, request.SupervisorUserId);
-            if (!ok) throw new Exception("Assign failed");
+            if (!ok) throw new BadRequestException("Assign failed");
 
             return "Assigned successfully";
         }
@@ -197,30 +189,25 @@ namespace Brainova.BLL.Services.Classes
 
             return dtos;
         }
+
         public async Task<string> DeleteUserAsync(string userId)
         {
             var user = await _userManager.FindByIdAsync(userId);
-            if (user is null) throw new Exception("User not found");
+            if (user is null) throw new NotFoundException("User not found");
 
-            // ✅ Prevent deleting yourself (recommended)
-            // (pass current userId from controller if you want this rule strictly)
-            // if (userId == currentUserId) throw new Exception("You can't delete yourself");
-
-            // ✅ If this user is a Supervisor, block delete if has students
             var roles = await _userManager.GetRolesAsync(user);
             if (roles.Contains("Supervisor"))
             {
                 var hasStudents = await _userManager.Users.AnyAsync(u => u.SupervisorUserId == user.Id);
-                if (hasStudents) throw new Exception("Can't delete supervisor: has assigned students");
+                if (hasStudents)
+                    throw new BadRequestException("Can't delete supervisor: has assigned students");
             }
 
-            // ✅ If this user is a Student, deleting is fine (FK is in the student row itself)
             var result = await _userManager.DeleteAsync(user);
             if (!result.Succeeded)
-                throw new Exception(string.Join(";", result.Errors.Select(e => e.Description)));
+                throw new BadRequestException(string.Join(";", result.Errors.Select(e => e.Description)));
 
             return "User deleted successfully";
         }
-
     }
 }

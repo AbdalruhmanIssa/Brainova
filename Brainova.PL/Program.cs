@@ -1,3 +1,4 @@
+using Brainova.BLL.Exceptions;
 using Brainova.BLL.Services.Classes;
 using Brainova.BLL.Services.Interface;
 using Brainova.DAL.Data;
@@ -15,6 +16,7 @@ using Microsoft.IdentityModel.Tokens;
 using Scalar.AspNetCore;
 
 var builder = WebApplication.CreateBuilder(args);
+
 builder.Services.AddScoped<IAuthenticationService, AuthenticationService>();
 
 builder.Services.AddScoped<IUserRepository, UserRepository>();
@@ -95,7 +97,8 @@ builder.Services.AddControllers();
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddOpenApi();
 
-var app = builder.Build();
+var app = builder.Build(); 
+app.UseMiddleware<ApiExceptionMiddleware>();
 
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())

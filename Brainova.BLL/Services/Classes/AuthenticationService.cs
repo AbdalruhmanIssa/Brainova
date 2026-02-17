@@ -1,4 +1,5 @@
 ﻿using Brainova.BLL.DTOs.Auth;
+using Brainova.BLL.Exceptions;
 using Brainova.BLL.Services.Interface;
 using Brainova.DAL.Modles;
 using Microsoft.AspNetCore.Http;
@@ -32,16 +33,16 @@ namespace Brainova.BLL.Services.Classes
 
         public async Task<UserResponse> LoginAsync(LoginRequest request)
         {
-            // email OR username
-            ApplicationUser? user =
+            var user =
                 await _userManager.FindByEmailAsync(request.EmailOrUserName)
                 ?? await _userManager.FindByNameAsync(request.EmailOrUserName);
 
+            // ✅ Security: لا تكشف إذا المستخدم موجود أو لا
             if (user is null)
-                throw new Exception("Invalid email/username or password");
+                throw new BadRequestException("Invalid email/username or password");
 
             if (user.IsBlocked)
-                throw new Exception("Your account is blocked");
+                throw new ForbiddenException("Your account is blocked");
 
             var result = await _signInManager.CheckPasswordSignInAsync(user, request.Password, true);
 
@@ -52,41 +53,35 @@ namespace Brainova.BLL.Services.Classes
                     Token = await CreateTokenAsync(user)
                 };
             }
-            else if (result.IsLockedOut)
-            {
-                throw new Exception("Your account is locked");
-            }
-            else if (result.IsNotAllowed)
-            {
-                // happens if RequireConfirmedEmail = true and EmailConfirmed = false
-                throw new Exception("Please confirm your email");
-            }
-            else
-            {
-                throw new Exception("Invalid email/username or password");
-            }
+
+            if (result.IsLockedOut)
+                throw new ForbiddenException("Your account is locked");
+
+            if (result.IsNotAllowed)
+                throw new BadRequestException("Please confirm your email");
+
+            throw new BadRequestException("Invalid email/username or password");
         }
 
-        // Student self-register -> sends confirm email link
         public async Task<string> RegisterStudentAsync(RegisterStudentRequest request, HttpRequest httpRequest)
         {
-            // 1️⃣ Basic duplicate checks
+            // 1) Uniqueness checks
             if (await _userManager.FindByEmailAsync(request.Email) != null)
-                throw new Exception("Email already exists");
+                throw new BadRequestException("Email already exists");
 
             if (await _userManager.FindByNameAsync(request.UserName) != null)
-                throw new Exception("Username already exists");
+                throw new BadRequestException("Username already exists");
 
-            // 2️⃣ 🔥 Validate Supervisor (INSERTED HERE)
+            // 2) Validate Supervisor
             var supervisor = await _userManager.FindByIdAsync(request.SupervisorUserId);
             if (supervisor is null)
-                throw new Exception("Supervisor not found");
+                throw new NotFoundException("Supervisor not found");
 
             var supRoles = await _userManager.GetRolesAsync(supervisor);
             if (!supRoles.Contains("Supervisor"))
-                throw new Exception("Invalid supervisor");
+                throw new BadRequestException("Invalid supervisor");
 
-            // 3️⃣ Create student
+            // 3) Create Student
             var user = new ApplicationUser
             {
                 FullName = request.FullName,
@@ -95,22 +90,23 @@ namespace Brainova.BLL.Services.Classes
                 UserName = request.UserName,
                 EmailConfirmed = false,
                 IsBlocked = false,
-                SupervisorUserId = request.SupervisorUserId // ✅ SAVE RELATION
+                SupervisorUserId = request.SupervisorUserId
             };
 
-            var result = await _userManager.CreateAsync(user, request.Password);
-            if (!result.Succeeded)
-                throw new Exception(string.Join(";", result.Errors.Select(e => e.Description)));
+            var createResult = await _userManager.CreateAsync(user, request.Password);
+            if (!createResult.Succeeded)
+                throw new BadRequestException(string.Join(";", createResult.Errors.Select(e => e.Description)));
 
-            await _userManager.AddToRoleAsync(user, "Student");
+            var roleResult = await _userManager.AddToRoleAsync(user, "Student");
+            if (!roleResult.Succeeded)
+                throw new BadRequestException(string.Join(";", roleResult.Errors.Select(e => e.Description)));
 
-            // 4️⃣ Email confirmation
+            // 4) Email confirmation
             var token = await _userManager.GenerateEmailConfirmationTokenAsync(user);
             var escaped = Uri.EscapeDataString(token);
 
             var confirmUrl =
-    $"{httpRequest.Scheme}://{httpRequest.Host}/api/Identity/Auths/confirm-email?token={escaped}&userId={user.Id}";
-
+                $"{httpRequest.Scheme}://{httpRequest.Host}/api/Identity/Auths/confirm-email?token={escaped}&userId={user.Id}";
 
             await _emailSender.SendEmailAsync(
                 user.Email!,
@@ -123,34 +119,37 @@ namespace Brainova.BLL.Services.Classes
             return "Registration successful. Please check your email to confirm your account.";
         }
 
-
         public async Task<string> ConfirmEmailAsync(string token, string userId)
         {
             var user = await _userManager.FindByIdAsync(userId);
             if (user is null)
-                throw new Exception("User not found");
+                throw new NotFoundException("User not found");
 
-            // token comes URL-escaped
             var decodedToken = Uri.UnescapeDataString(token);
-
             var result = await _userManager.ConfirmEmailAsync(user, decodedToken);
 
-            return result.Succeeded ? "Email confirmed successfully" : "Email confirmation failed";
+            if (!result.Succeeded)
+                throw new BadRequestException("Email confirmation failed");
+
+            return "Email confirmed successfully";
         }
 
         public async Task<bool> ForgotPasswordAsync(ForgetPasswordRequest request)
         {
             var user = await _userManager.FindByEmailAsync(request.Email);
-            if (user is null) throw new Exception("User not found");
+            if (user is null)
+                throw new NotFoundException("User not found");
 
-            // Silverhand-style 4-digit code
+            // 4-digit code
             var random = new Random();
             var code = random.Next(1000, 9999).ToString();
 
             user.CodeResetPassword = code;
             user.CodeResetPasswordExpire = DateTime.UtcNow.AddMinutes(15);
 
-            await _userManager.UpdateAsync(user);
+            var updateResult = await _userManager.UpdateAsync(user);
+            if (!updateResult.Succeeded)
+                throw new BadRequestException(string.Join(";", updateResult.Errors.Select(e => e.Description)));
 
             await _emailSender.SendEmailAsync(
                 request.Email,
@@ -165,38 +164,61 @@ namespace Brainova.BLL.Services.Classes
         public async Task<bool> ResetPasswordAsync(ResetPasswordRequest request)
         {
             var user = await _userManager.FindByEmailAsync(request.Email);
-            if (user is null) throw new Exception("User not found");
+            if (user is null)
+                throw new NotFoundException("User not found");
 
-            if (user.CodeResetPassword != request.Code) return false;
-            if (!user.CodeResetPasswordExpire.HasValue || user.CodeResetPasswordExpire < DateTime.UtcNow) return false;
+            if (user.CodeResetPassword != request.Code)
+                throw new BadRequestException("Invalid reset code");
+
+            if (!user.CodeResetPasswordExpire.HasValue || user.CodeResetPasswordExpire < DateTime.UtcNow)
+                throw new BadRequestException("Reset code expired");
 
             var token = await _userManager.GeneratePasswordResetTokenAsync(user);
             var result = await _userManager.ResetPasswordAsync(user, token, request.NewPassword);
 
-            if (result.Succeeded)
-            {
-                // clear code
-                user.CodeResetPassword = null;
-                user.CodeResetPasswordExpire = null;
-                await _userManager.UpdateAsync(user);
+            if (!result.Succeeded)
+                throw new BadRequestException(string.Join(";", result.Errors.Select(e => e.Description)));
 
-                await _emailSender.SendEmailAsync(
-                    request.Email,
-                    "Brainova - Password changed",
-                    "<h3>Your password has been changed successfully.</h3>"
-                );
-            }
+            // clear code
+            user.CodeResetPassword = null;
+            user.CodeResetPasswordExpire = null;
 
-            return result.Succeeded;
+            var updateResult = await _userManager.UpdateAsync(user);
+            if (!updateResult.Succeeded)
+                throw new BadRequestException(string.Join(";", updateResult.Errors.Select(e => e.Description)));
+
+            await _emailSender.SendEmailAsync(
+                request.Email,
+                "Brainova - Password changed",
+                "<h3>Your password has been changed successfully.</h3>"
+            );
+
+            return true;
         }
 
-        
+        public async Task<string> SetPasswordAsync(SetPasswordRequest request)
+        {
+            var user = await _userManager.FindByIdAsync(request.UserId);
+            if (user is null)
+                throw new NotFoundException("User not found");
 
-    
+            var decodedToken = Uri.UnescapeDataString(request.Token);
+            var result = await _userManager.ResetPasswordAsync(user, decodedToken, request.NewPassword);
+
+            if (!result.Succeeded)
+                throw new BadRequestException(string.Join(";", result.Errors.Select(e => e.Description)));
+
+            await _emailSender.SendEmailAsync(
+                user.Email!,
+                "Brainova - Password set",
+                "<p>Your password has been set successfully. You can now login.</p>"
+            );
+
+            return "Password set successfully.";
+        }
 
         private async Task<string> CreateTokenAsync(ApplicationUser user)
         {
-            // Keep your Silverhand claim names ("Role" too)
             var claims = new List<Claim>
             {
                 new Claim("Name", user.UserName ?? ""),
@@ -209,12 +231,10 @@ namespace Brainova.BLL.Services.Classes
                 claims.Add(new Claim("Role", role));
 
             var jwtSection = _configuration.GetSection("jwtOptions");
-
-            // Base64 secret (your choice)
             var secretBase64 = jwtSection["SecretKey"] ?? throw new Exception("jwtOptions:SecretKey missing");
+
             var keyBytes = Convert.FromBase64String(secretBase64);
             var securityKey = new SymmetricSecurityKey(keyBytes);
-
             var credentials = new SigningCredentials(securityKey, SecurityAlgorithms.HmacSha256);
 
             var issuer = jwtSection["Issuer"];
@@ -231,28 +251,5 @@ namespace Brainova.BLL.Services.Classes
 
             return new JwtSecurityTokenHandler().WriteToken(token);
         }
-
-        public async Task<string> SetPasswordAsync(SetPasswordRequest request)
-        {
-            var user = await _userManager.FindByIdAsync(request.UserId);
-            if (user is null)
-                throw new Exception("User not found");
-
-            var decodedToken = Uri.UnescapeDataString(request.Token);
-
-            var result = await _userManager.ResetPasswordAsync(user, decodedToken, request.NewPassword);
-
-            if (!result.Succeeded)
-                throw new Exception(string.Join(";", result.Errors.Select(e => e.Description)));
-
-            await _emailSender.SendEmailAsync(
-                user.Email!,
-                "Brainova - Password set",
-                "<p>Your password has been set successfully. You can now login.</p>"
-            );
-
-            return "Password set successfully.";
-        }
-
     }
 }

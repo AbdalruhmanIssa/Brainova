@@ -13,9 +13,16 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.UI.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
+using Microsoft.ML.OnnxRuntime;
 using Scalar.AspNetCore;
+using Mapster;
+
+using Brainova.BLL.Mapping;
 
 var builder = WebApplication.CreateBuilder(args);
+TypeAdapterConfig.GlobalSettings.Scan(typeof(MapsterConfig).Assembly);
+
+
 
 builder.Services.AddScoped<IAuthenticationService, AuthenticationService>();
 
@@ -23,8 +30,44 @@ builder.Services.AddScoped<IUserRepository, UserRepository>();
 builder.Services.AddScoped<IUserService, UserService>();
 
 builder.Services.AddScoped<IEmailSender, EmailSetting>();
+builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
+builder.Services.AddScoped<IFileService, FileService>();
+builder.Services.AddScoped<IMriCaseService, MriCaseService>();
+builder.Services.AddScoped<IAiResultService, AiResultService>();
 
 builder.Services.AddScoped<ISeedData, SeedData>();
+
+// Register ONNX session as Singleton (heavy object)
+//builder.Services.AddSingleton(sp =>
+//{
+//    var env = sp.GetRequiredService<IWebHostEnvironment>();
+//    var modelPath = Path.Combine(env.WebRootPath, "Models", "brainova_effnetb1.onnx");
+//    return new InferenceSession(modelPath);
+//});
+
+// Register service as Scoped (your normal style)
+// 1) ONNX session as singleton
+
+
+// 2) HttpClient for Python (named client)
+builder.Services.AddScoped<IAiTumorService, AiTumorService>();
+
+builder.Services.AddHttpClient("GradCamClient", client =>
+{
+    client.BaseAddress = new Uri("https://brainova-ai-1031567223264.europe-west1.run.app/");
+    client.Timeout = TimeSpan.FromMinutes(5);
+});
+
+// 3) Your service (interface -> implementation)
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("AllowFrontend", policy =>
+        policy
+            .AllowAnyOrigin()
+            .AllowAnyHeader()
+            .AllowAnyMethod()
+    );
+});
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("Default")));
 
@@ -90,14 +133,16 @@ builder.Services
 
 builder.Services.AddAuthorization();
 
-
+builder.Services.AddHttpContextAccessor();
 // Add services to the container.
 
 builder.Services.AddControllers();
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddOpenApi();
 
-var app = builder.Build(); 
+var app = builder.Build();
+app.UseCors("AllowFrontend");
+
 app.UseMiddleware<ApiExceptionMiddleware>();
 
 // Configure the HTTP request pipeline.

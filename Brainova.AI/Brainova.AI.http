@@ -1,0 +1,6 @@
+@Brainova.AI_HostAddress = http://localhost:5047
+
+GET {{Brainova.AI_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

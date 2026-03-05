@@ -101,6 +101,7 @@ namespace Brainova.BLL.Services.Classes
             if (!roleResult.Succeeded)
                 throw new BadRequestException(string.Join(";", roleResult.Errors.Select(e => e.Description)));
 
+
             // 4) Email confirmation
             var token = await _userManager.GenerateEmailConfirmationTokenAsync(user);
             var escaped = Uri.EscapeDataString(token);
@@ -173,11 +174,16 @@ namespace Brainova.BLL.Services.Classes
             if (!user.CodeResetPasswordExpire.HasValue || user.CodeResetPasswordExpire < DateTime.UtcNow)
                 throw new BadRequestException("Reset code expired");
 
+            // ✅ NEW CHECK HERE
+            var isSamePassword = await _userManager.CheckPasswordAsync(user, request.NewPassword);
+            if (isSamePassword)
+                throw new BadRequestException("New password must be different from the old password.");
+
             var token = await _userManager.GeneratePasswordResetTokenAsync(user);
             var result = await _userManager.ResetPasswordAsync(user, token, request.NewPassword);
 
             if (!result.Succeeded)
-                throw new BadRequestException(string.Join(";", result.Errors.Select(e => e.Description)));
+                throw new BadRequestException(string.Join(",", result.Errors.Select(e => e.Description)));
 
             // clear code
             user.CodeResetPassword = null;
@@ -185,7 +191,7 @@ namespace Brainova.BLL.Services.Classes
 
             var updateResult = await _userManager.UpdateAsync(user);
             if (!updateResult.Succeeded)
-                throw new BadRequestException(string.Join(";", updateResult.Errors.Select(e => e.Description)));
+                throw new BadRequestException(string.Join(",", updateResult.Errors.Select(e => e.Description)));
 
             await _emailSender.SendEmailAsync(
                 request.Email,

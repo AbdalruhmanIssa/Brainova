@@ -4,6 +4,7 @@ using Brainova.DAL.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace Brainova.DAL.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260303013539_base+mri")]
+    partial class basemri
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -21,43 +24,6 @@ namespace Brainova.DAL.Migrations
                 .HasAnnotation("Relational:MaxIdentifierLength", 128);
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
-
-            modelBuilder.Entity("Brainova.DAL.Modles.AiResult", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<Guid>("CaseId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<string>("GradcamFileName")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("nvarchar(200)");
-
-                    b.Property<string>("PredictionResult")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)");
-
-                    b.Property<string>("ProbabilitiesJson")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("datetime2");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("CaseId")
-                        .IsUnique();
-
-                    b.ToTable("AiResults", (string)null);
-                });
 
             modelBuilder.Entity("Brainova.DAL.Modles.ApplicationUser", b =>
                 {
@@ -306,17 +272,6 @@ namespace Brainova.DAL.Migrations
                     b.ToTable("AspNetUserTokens", (string)null);
                 });
 
-            modelBuilder.Entity("Brainova.DAL.Modles.AiResult", b =>
-                {
-                    b.HasOne("Brainova.DAL.Modles.MriCase", "MriCase")
-                        .WithOne("AiResult")
-                        .HasForeignKey("Brainova.DAL.Modles.AiResult", "CaseId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("MriCase");
-                });
-
             modelBuilder.Entity("Brainova.DAL.Modles.ApplicationUser", b =>
                 {
                     b.HasOne("Brainova.DAL.Modles.ApplicationUser", "SupervisorUser")
@@ -392,11 +347,6 @@ namespace Brainova.DAL.Migrations
             modelBuilder.Entity("Brainova.DAL.Modles.ApplicationUser", b =>
                 {
                     b.Navigation("Students");
-                });
-
-            modelBuilder.Entity("Brainova.DAL.Modles.MriCase", b =>
-                {
-                    b.Navigation("AiResult");
                 });
 #pragma warning restore 612, 618
         }

@@ -34,7 +34,9 @@ builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
 builder.Services.AddScoped<IFileService, FileService>();
 builder.Services.AddScoped<IMriCaseService, MriCaseService>();
 builder.Services.AddScoped<IAiResultService, AiResultService>();
-
+builder.Services.AddScoped<IReportQuestionService, ReportQuestionService>();
+builder.Services.AddScoped<IReportService, ReportService>();
+builder.Services.AddScoped<IReportPdfService, ReportPdfService>();
 builder.Services.AddScoped<ISeedData, SeedData>();
 
 // Register ONNX session as Singleton (heavy object)

@@ -159,6 +159,7 @@ namespace Brainova.BLL.Services.Classes
                 "<p>This code expires in 15 minutes.</p>"
             );
 
+
             return true;
         }
 

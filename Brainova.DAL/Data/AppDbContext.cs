@@ -1,6 +1,8 @@
-﻿using Brainova.DAL.Modles;
+﻿using Brainova.DAL.Data.Configs;
+using Brainova.DAL.Modles;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
+using System.Reflection.Emit;
 
 namespace Brainova.DAL.Data
 {
@@ -43,6 +45,10 @@ namespace Brainova.DAL.Data
         protected override void OnModelCreating(ModelBuilder builder)
         {
             base.OnModelCreating(builder);
+            builder.ApplyConfiguration(new ReportConfig());
+            builder.ApplyConfiguration(new ReportQuestionConfig());
+            builder.ApplyConfiguration(new ReportAnswerConfig());
+
 
             builder.Entity<ApplicationUser>()
                 .HasOne(u => u.SupervisorUser)

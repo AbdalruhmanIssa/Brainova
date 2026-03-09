@@ -2,6 +2,7 @@
 using Microsoft.Extensions.Configuration;
 using System.Net;
 using System.Net.Mail;
+using System.Net.Mime;
 
 namespace Brainova.PL.uti
 {
@@ -37,5 +38,6 @@ namespace Brainova.PL.uti
 
             await client.SendMailAsync(message);
         }
+
     }
 }

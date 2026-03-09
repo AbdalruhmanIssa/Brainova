@@ -4,6 +4,7 @@ using Brainova.DAL.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace Brainova.DAL.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260305043728_enum update")]
+    partial class enumupdate
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -171,130 +174,6 @@ namespace Brainova.DAL.Migrations
                     b.HasIndex("StudentId");
 
                     b.ToTable("MriCases", (string)null);
-                });
-
-            modelBuilder.Entity("Brainova.DAL.Modles.Report", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<Guid>("CaseId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<string>("StudentId")
-                        .IsRequired()
-                        .HasMaxLength(450)
-                        .HasColumnType("nvarchar(450)");
-
-                    b.Property<DateTime>("SubmittedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("datetime2");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("StudentId");
-
-                    b.HasIndex("CaseId", "StudentId")
-                        .IsUnique();
-
-                    b.ToTable("Reports", (string)null);
-                });
-
-            modelBuilder.Entity("Brainova.DAL.Modles.ReportAnswer", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<bool?>("AnswerBool")
-                        .HasColumnType("bit");
-
-                    b.Property<string>("AnswerJson")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<decimal?>("AnswerNumber")
-                        .HasPrecision(18, 4)
-                        .HasColumnType("decimal(18,4)");
-
-                    b.Property<string>("AnswerText")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<Guid>("QuestionId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<string>("QuestionTextSnapshot")
-                        .IsRequired()
-                        .HasMaxLength(2000)
-                        .HasColumnType("nvarchar(2000)");
-
-                    b.Property<byte>("QuestionTypeSnapshot")
-                        .HasColumnType("tinyint");
-
-                    b.Property<Guid>("ReportId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("datetime2");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("QuestionId");
-
-                    b.HasIndex("ReportId", "QuestionId")
-                        .IsUnique();
-
-                    b.ToTable("ReportAnswers", (string)null);
-                });
-
-            modelBuilder.Entity("Brainova.DAL.Modles.ReportQuestion", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<string>("Code")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<bool>("IsActive")
-                        .HasColumnType("bit");
-
-                    b.Property<string>("OptionsJson")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<int>("Order")
-                        .HasColumnType("int");
-
-                    b.Property<string>("Text")
-                        .IsRequired()
-                        .HasMaxLength(2000)
-                        .HasColumnType("nvarchar(2000)");
-
-                    b.Property<byte>("Type")
-                        .HasColumnType("tinyint");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("datetime2");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("Code")
-                        .IsUnique();
-
-                    b.ToTable("ReportQuestions", (string)null);
                 });
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRole", b =>
@@ -462,44 +341,6 @@ namespace Brainova.DAL.Migrations
                     b.Navigation("Student");
                 });
 
-            modelBuilder.Entity("Brainova.DAL.Modles.Report", b =>
-                {
-                    b.HasOne("Brainova.DAL.Modles.MriCase", "Case")
-                        .WithMany()
-                        .HasForeignKey("CaseId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("Brainova.DAL.Modles.ApplicationUser", "Student")
-                        .WithMany()
-                        .HasForeignKey("StudentId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("Case");
-
-                    b.Navigation("Student");
-                });
-
-            modelBuilder.Entity("Brainova.DAL.Modles.ReportAnswer", b =>
-                {
-                    b.HasOne("Brainova.DAL.Modles.ReportQuestion", "Question")
-                        .WithMany()
-                        .HasForeignKey("QuestionId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("Brainova.DAL.Modles.Report", "Report")
-                        .WithMany("Answers")
-                        .HasForeignKey("ReportId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Question");
-
-                    b.Navigation("Report");
-                });
-
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRoleClaim<string>", b =>
                 {
                     b.HasOne("Microsoft.AspNetCore.Identity.IdentityRole", null)
@@ -559,11 +400,6 @@ namespace Brainova.DAL.Migrations
             modelBuilder.Entity("Brainova.DAL.Modles.MriCase", b =>
                 {
                     b.Navigation("AiResult");
-                });
-
-            modelBuilder.Entity("Brainova.DAL.Modles.Report", b =>
-                {
-                    b.Navigation("Answers");
                 });
 #pragma warning restore 612, 618
         }

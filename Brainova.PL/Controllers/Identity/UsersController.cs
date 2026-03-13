@@ -1,4 +1,5 @@
 ﻿using Brainova.BLL.DTOs.Auth;
+using Brainova.BLL.DTOs.User;
 using Brainova.BLL.Services.Interface;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -68,6 +69,14 @@ namespace Brainova.PL.Areas.Identity.Controllers
             var message = await _userService.CreateAdminAsync(request, Request);
             return Ok(new { message });
         }
+
+
+        [HttpPost("create-student")]
+        public async Task<IActionResult> CreateStudent(CreateUserRequest request)
+        {
+            var message = await _userService.CreateStudentAsync(request, Request);
+            return Ok(new { message });
+        }
         [HttpGet("supervisors")]
         [AllowAnonymous]
         public async Task<IActionResult> GetSupervisors()
@@ -89,6 +98,36 @@ namespace Brainova.PL.Areas.Identity.Controllers
         {
             var msg = await _userService.DeleteUserAsync(userId);
             return Ok(new { message = msg });
+        }
+        [HttpPut("update/{userId}")]
+        public async Task<IActionResult> UpdateUser([FromRoute] string userId, [FromBody] UpdateUserRequest request)
+        {
+            var updatedUser = await _userService.UpdateUserAsync(userId, request);
+            return Ok(updatedUser);
+        }
+        [HttpGet("{userId}")]
+        public async Task<IActionResult> GetById([FromRoute] string userId)
+        {
+            var user = await _userService.GetByIdAsync(userId);
+
+            if (user == null)
+                return NotFound(new { message = "User not found" });
+
+            return Ok(user);
+        }
+        [HttpDelete("bulk-delete")]
+        public async Task<IActionResult> DeleteUsers([FromBody] DeleteUsersRequest request)
+        {
+            var result = await _userService.DeleteUsersAsync(request);
+            return Ok(result);
+        }
+        [HttpPatch("change-password/{userId}")]
+        [Authorize(Roles = "SuperAdmin")]
+        public async Task<IActionResult> ResetPassword(string userId, ChangeUserPasswordRequest request)
+        {
+            var result = await _userService.ResetUserPasswordAsync(userId, request);
+
+            return Ok(new { message = result });
         }
     }
 

@@ -2,7 +2,7 @@
 using System.Collections.Generic;
 using System.Text;
 
-namespace Brainova.BLL.DTOs.Auth
+namespace Brainova.BLL.DTOs.User
 {
     public class UserDTO
     {
@@ -14,6 +14,8 @@ namespace Brainova.BLL.DTOs.Auth
         public bool EmailConfirmed { get; set; }
         public string RoleName { get; set; } = "";
         public bool IsBlocked { get; set; }
+        public string? SupervisorId { get; set; }
+        public string? SupervisorName { get; set; }
     }
 
 }

@@ -15,5 +15,7 @@ namespace Brainova.BLL.DTOs.User
 
         [Required, Phone, MaxLength(20)]
         public string PhoneNumber { get; set; } = null!;
+        public string? SupervisorUserId { get; set; } = null!;
+
     }
 }

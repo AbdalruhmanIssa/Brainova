@@ -9,27 +9,33 @@ namespace Brainova.BLL.Services.Interface
 {
     public interface IUserService
     {
+        //get
         Task<List<UserDTO>> GetAllAsync();
-        Task<UpdateUserResponse?> GetByIdAsync(string userId);
+        Task<UserDTO?> GetByIdAsync(string userId);
+        Task<List<SupervisorOptionResponse>> GetSupervisorsAsync();
+        Task<List<UserDTO>> GetMyStudentsAsync(string supervisorUserId);
 
+
+        // Block/Unblock
         Task<bool> BlockUserAsync(string userId);
         Task<bool> UnBlockUserAsync(string userId);
         Task<bool> IsBlockedAsync(string userId);
 
-        Task<bool> ChangeUserRoleAsync(string userId, string roleName);
 
         // Create
         Task<string> CreateSupervisorAsync(CreateUserRequest request, HttpRequest httpRequest);
         Task<string> CreateAdminAsync(CreateUserRequest request, HttpRequest httpRequest);
         Task<string> CreateStudentAsync(CreateUserRequest request, HttpRequest httpRequest);
-        Task<List<SupervisorOptionResponse>> GetSupervisorsAsync();
-        Task<string> AssignSupervisorAsync(AssignSupervisorRequest request);
-        Task<List<UserDTO>> GetMyStudentsAsync(string supervisorUserId);
-        Task<string> DeleteUserAsync(string userId);
-        Task<BulkDeleteUsersResponse> DeleteUsersAsync(DeleteUsersRequest request);
-        Task<UserDTO> UpdateUserAsync(string userId, UpdateUserRequest request);
+  
+        // Update
+        Task<string> UpdateUserAsync(string userId, UpdateUserRequest request);
         Task<string> ResetUserPasswordAsync(string userId, ChangeUserPasswordRequest request);
 
+        Task<ChangeUserRoleResponse> ChangeUserRoleAsync(ChangeUserRoleRequest request);
+
+        // Delete
+        Task<string> DeleteUserAsync(string userId);
+        Task<BulkDeleteUsersResponse> DeleteUsersAsync(DeleteUsersRequest request);
 
     }
 }

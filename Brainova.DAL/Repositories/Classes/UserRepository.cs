@@ -51,17 +51,37 @@ namespace Brainova.DAL.Repositories.Classes
             return user.IsBlocked;
         }
 
-        public async Task<bool> ChangeUserRoleAsync(string userId, string roleName)
+        public async Task<(bool Success, string Message, string? OldRole)> ChangeUserRoleAsync(string userId, string roleName)
         {
             var user = await _userManager.FindByIdAsync(userId);
-            if (user is null) return false;
+            if (user is null)
+                return (false, "User not found", null);
 
             var currentRoles = await _userManager.GetRolesAsync(user);
+            var oldRole = currentRoles.FirstOrDefault();
+
+            if (oldRole == roleName)
+                return (false, $"User is already in role '{roleName}'", oldRole);
 
             var removeResult = await _userManager.RemoveFromRolesAsync(user, currentRoles);
-            var addResult = await _userManager.AddToRoleAsync(user, roleName);
+            if (!removeResult.Succeeded)
+                return (false, string.Join(";", removeResult.Errors.Select(e => e.Description)), oldRole);
 
-            return removeResult.Succeeded && addResult.Succeeded;
+            var addResult = await _userManager.AddToRoleAsync(user, roleName);
+            if (!addResult.Succeeded)
+                return (false, string.Join(";", addResult.Errors.Select(e => e.Description)), oldRole);
+
+            // if user WAS student and is no longer student -> clear supervisor
+            if (oldRole == "Student" && roleName != "Student")
+            {
+                user.SupervisorUserId = null;
+                var updateResult = await _userManager.UpdateAsync(user);
+
+                if (!updateResult.Succeeded)
+                    return (false, string.Join(";", updateResult.Errors.Select(e => e.Description)), oldRole);
+            }
+
+            return (true, "Role changed successfully", oldRole);
         }
 
         public async Task<(bool Success, string Message, ApplicationUser? User)> CreateUserWithRoleAsync(ApplicationUser user, string roleName)

@@ -30,6 +30,7 @@ namespace Brainova.BLL.Services.Classes
             _emailSender = emailSender;
             _uow = uow;
         }
+        //GET
 
         public async Task<List<UserDTO>> GetAllAsync()
         {
@@ -71,28 +72,95 @@ namespace Brainova.BLL.Services.Classes
             return list;
         }
 
-        public async Task<UpdateUserResponse?> GetByIdAsync(string userId)
+        public async Task<UserDTO?> GetByIdAsync(string userId)
         {
             var user = await _userRepository.GetByIdAsync(userId);
             if (user == null) return null;
+            
 
             var roles = await _userManager.GetRolesAsync(user);
+          
+            var roleName = roles.FirstOrDefault() ?? "";
 
-            return new UpdateUserResponse
+            string? supervisorName = null;
+            string? supervisorId = null;
+
+            if (roleName == "Student" && !string.IsNullOrWhiteSpace(user.SupervisorUserId))
             {
-              
+                supervisorId = user.SupervisorUserId;
+
+                var supervisor = await _userManager.FindByIdAsync(user.SupervisorUserId);
+                supervisorName = supervisor?.FullName;
+            }
+
+            return new UserDTO
+            {
+
+
+                Id = user.Id,
                 FullName = user.FullName,
-                UserName = user.UserName,
-                PhoneNumber = user.PhoneNumber,
-                Email = user.Email
-               
+                UserName = user.UserName ?? "",
+                PhoneNumber = user.PhoneNumber ?? "",
+                Email = user.Email ?? "",
+                EmailConfirmed = user.EmailConfirmed,
+                RoleName = roleName,
+                IsBlocked = user.IsBlocked,
+
+                SupervisorId = supervisorId,
+                SupervisorName = supervisorName
+
             };
         }
+
+        public async Task<List<SupervisorOptionResponse>> GetSupervisorsAsync()
+        {
+            var users = await _userRepository.GetSupervisorsAsync();
+            var result = new List<SupervisorOptionResponse>();
+
+            foreach (var u in users)
+            {
+                var roles = await _userManager.GetRolesAsync(u);
+                if (roles.Contains("Supervisor"))
+                {
+                    result.Add(new SupervisorOptionResponse
+                    {
+                        Id = u.Id,
+                        FullName = u.FullName
+                    });
+                }
+            }
+
+            return result;
+        }
+
+
+
+        public async Task<List<UserDTO>> GetMyStudentsAsync(string supervisorUserId)
+        {
+            var students = await _userRepository.GetStudentsOfSupervisorAsync(supervisorUserId);
+
+            var dtos = new List<UserDTO>();
+            foreach (var s in students)
+            {
+                dtos.Add(new UserDTO
+                {
+                    Id = s.Id,
+                    FullName = s.FullName,
+                    UserName = s.UserName ?? "",
+                    Email = s.Email ?? "",
+                    PhoneNumber = s.PhoneNumber ?? "",
+                    EmailConfirmed = s.EmailConfirmed,
+                    RoleName = "Student"
+                });
+            }
+
+            return dtos;
+        }
+        //Block/Unblock
 
         public Task<bool> BlockUserAsync(string userId) => _userRepository.BlockUserAsync(userId);
         public Task<bool> UnBlockUserAsync(string userId) => _userRepository.UnBlockUserAsync(userId);
         public Task<bool> IsBlockedAsync(string userId) => _userRepository.IsBlockedAsync(userId);
-        public Task<bool> ChangeUserRoleAsync(string userId, string roleName) => _userRepository.ChangeUserRoleAsync(userId, roleName);
 
         public Task<string> CreateSupervisorAsync(CreateUserRequest request, HttpRequest httpRequest)
             => CreateUserWithRoleAndSetPasswordEmailAsync(request, "Supervisor", httpRequest);
@@ -102,8 +170,6 @@ namespace Brainova.BLL.Services.Classes
         public Task<string> CreateStudentAsync(CreateUserRequest request, HttpRequest httpRequest)
         
             => CreateUserWithRoleAndSetPasswordEmailAsync(request, "Student", httpRequest);
-
-
 
         private async Task<string> CreateUserWithRoleAndSetPasswordEmailAsync(
      CreateUserRequest request,
@@ -163,133 +229,252 @@ namespace Brainova.BLL.Services.Classes
             return $"{roleName} created successfully. Set-password email sent.";
         }
 
-        public async Task<List<SupervisorOptionResponse>> GetSupervisorsAsync()
+        //Update
+        public async Task<ChangeUserRoleResponse> ChangeUserRoleAsync(ChangeUserRoleRequest request)
         {
-            var users = await _userRepository.GetSupervisorsAsync();
-            var result = new List<SupervisorOptionResponse>();
+            var validRoles = new[] { "SuperAdmin", "Admin", "Supervisor", "Student" };
 
-            foreach (var u in users)
+            if (!validRoles.Contains(request.RoleName))
+                throw new BadRequestException("Invalid role name");
+
+            var user = await _userManager.FindByIdAsync(request.UserId);
+            if (user is null)
+                throw new NotFoundException("User not found");
+
+            var result = await _userRepository.ChangeUserRoleAsync(request.UserId, request.RoleName);
+
+            if (!result.Success)
+                throw new BadRequestException(result.Message);
+
+            await _emailSender.SendEmailAsync(
+                user.Email!,
+                "Brainova - Role Updated",
+                $"<h3>Hello {user.UserName}</h3>" +
+                $"<p>Your account role has been changed.</p>" +
+                $"<p><strong>Old Role:</strong> {result.OldRole ?? "None"}</p>" +
+                $"<p><strong>New Role:</strong> {request.RoleName}</p>"
+            );
+
+            return new ChangeUserRoleResponse
             {
-                var roles = await _userManager.GetRolesAsync(u);
-                if (roles.Contains("Supervisor"))
-                {
-                    result.Add(new SupervisorOptionResponse
-                    {
-                        Id = u.Id,
-                        FullName = u.FullName
-                    });
-                }
-            }
-
-            return result;
+                UserId = user.Id,
+                FullName = user.FullName,
+                UserName = user.UserName ?? "",
+                Email = user.Email ?? "",
+                OldRole = result.OldRole,
+                NewRole = request.RoleName
+            };
         }
-
-        public async Task<string> AssignSupervisorAsync(AssignSupervisorRequest request)
-        {
-            var student = await _userManager.FindByIdAsync(request.StudentUserId);
-            if (student is null) throw new NotFoundException("Student not found");
-
-            var supervisor = await _userManager.FindByIdAsync(request.SupervisorUserId);
-            if (supervisor is null) throw new NotFoundException("Supervisor not found");
-
-            var studentRoles = await _userManager.GetRolesAsync(student);
-            if (!studentRoles.Contains("Student"))
-                throw new BadRequestException("Target user is not a Student");
-
-            var supRoles = await _userManager.GetRolesAsync(supervisor);
-            if (!supRoles.Contains("Supervisor"))
-                throw new BadRequestException("Target user is not a Supervisor");
-
-            var ok = await _userRepository.AssignSupervisorAsync(request.StudentUserId, request.SupervisorUserId);
-            if (!ok) throw new BadRequestException("Assign failed");
-
-            return "Assigned successfully";
-        }
-
-        public async Task<List<UserDTO>> GetMyStudentsAsync(string supervisorUserId)
-        {
-            var students = await _userRepository.GetStudentsOfSupervisorAsync(supervisorUserId);
-
-            var dtos = new List<UserDTO>();
-            foreach (var s in students)
-            {
-                dtos.Add(new UserDTO
-                {
-                    Id = s.Id,
-                    FullName = s.FullName,
-                    UserName = s.UserName ?? "",
-                    Email = s.Email ?? "",
-                    PhoneNumber = s.PhoneNumber ?? "",
-                    EmailConfirmed = s.EmailConfirmed,
-                    RoleName = "Student"
-                });
-            }
-
-            return dtos;
-        }
-
-        public async Task<string> DeleteUserAsync(string userId)
-        {
-            var user = await _userManager.FindByIdAsync(userId);
-            if (user is null) throw new NotFoundException("User not found");
-
-            var roles = await _userManager.GetRolesAsync(user);
-            if (roles.Contains("Supervisor"))
-            {
-                var hasStudents = await _userManager.Users.AnyAsync(u => u.SupervisorUserId == user.Id);
-                if (hasStudents)
-                    throw new BadRequestException("Can't delete supervisor: has assigned students");
-            }
-
-            var result = await _userManager.DeleteAsync(user);
-            if (!result.Succeeded)
-                throw new BadRequestException(string.Join(";", result.Errors.Select(e => e.Description)));
-
-            return "User deleted successfully";
-        }
-        public async Task<UserDTO> UpdateUserAsync(string userId, UpdateUserRequest request)
+        public async Task<string> UpdateUserAsync(string userId, UpdateUserRequest request)
         {
             var user = await _userManager.FindByIdAsync(userId);
             if (user is null)
                 throw new NotFoundException("User not found");
 
-            // Check email uniqueness except current user
-            var existingByEmail = await _userManager.FindByEmailAsync(request.Email);
-            if (existingByEmail != null && existingByEmail.Id != userId)
-                throw new BadRequestException("Email already exists");
+            var userRoles = await _userManager.GetRolesAsync(user);
+            var isStudent = userRoles.Contains("Student");
 
-            // Check username uniqueness except current user
-            var existingByUserName = await _userManager.FindByNameAsync(request.UserName);
-            if (existingByUserName != null && existingByUserName.Id != userId)
-                throw new BadRequestException("Username already exists");
+            if (!string.Equals(user.Email, request.Email, StringComparison.OrdinalIgnoreCase))
+            {
+                var existingByEmail = await _userManager.FindByEmailAsync(request.Email);
+                if (existingByEmail != null && existingByEmail.Id != userId)
+                    throw new BadRequestException("Email already exists");
+            }
 
-            user.FullName = request.FullName;
-            user.Email = request.Email;
-            user.NormalizedEmail = _userManager.NormalizeEmail(request.Email);
+            if (!string.Equals(user.UserName, request.UserName, StringComparison.OrdinalIgnoreCase))
+            {
+                var existingByUserName = await _userManager.FindByNameAsync(request.UserName);
+                if (existingByUserName != null && existingByUserName.Id != userId)
+                    throw new BadRequestException("Username already exists");
+            }
 
-            user.UserName = request.UserName;
-            user.NormalizedUserName = _userManager.NormalizeName(request.UserName);
+            ApplicationUser? newSupervisor = null;
 
-            user.PhoneNumber = request.PhoneNumber;
+            if (isStudent)
+            {
+                if (string.IsNullOrWhiteSpace(request.SupervisorUserId))
+                    throw new BadRequestException("Student must have a supervisor");
+
+                newSupervisor = await _userManager.FindByIdAsync(request.SupervisorUserId);
+                if (newSupervisor is null)
+                    throw new NotFoundException("Supervisor not found");
+
+                var supervisorRoles = await _userManager.GetRolesAsync(newSupervisor);
+                if (!supervisorRoles.Contains("Supervisor"))
+                    throw new BadRequestException("Target supervisor user is not a Supervisor");
+            }
+            else
+            {
+                if (!string.IsNullOrWhiteSpace(request.SupervisorUserId))
+                    throw new BadRequestException("Supervisor can only be assigned to students");
+            }
+
+            var oldEmail = user.Email ?? string.Empty;
+            var changes = new List<string>();
+
+            bool TrackChange(string fieldName, string? oldValue, string? newValue, Action applyChange)
+            {
+                var oldNormalized = oldValue?.Trim() ?? string.Empty;
+                var newNormalized = newValue?.Trim() ?? string.Empty;
+
+                if (string.Equals(oldNormalized, newNormalized, StringComparison.Ordinal))
+                    return false;
+
+                changes.Add($"{fieldName} changed from: {oldValue ?? "(empty)"} to: {newValue ?? "(empty)"}");
+                applyChange();
+                return true;
+            }
+
+            TrackChange("Full Name", user.FullName, request.FullName, () =>
+            {
+                user.FullName = request.FullName;
+            });
+
+            TrackChange("Email", user.Email, request.Email, () =>
+            {
+                user.Email = request.Email;
+                user.NormalizedEmail = _userManager.NormalizeEmail(request.Email);
+            });
+
+            TrackChange("User Name", user.UserName, request.UserName, () =>
+            {
+                user.UserName = request.UserName;
+                user.NormalizedUserName = _userManager.NormalizeName(request.UserName);
+            });
+
+            TrackChange("Phone Number", user.PhoneNumber, request.PhoneNumber, () =>
+            {
+                user.PhoneNumber = request.PhoneNumber;
+            });
+            if (isStudent)
+            {
+                string oldSupervisorName = "(unknown)";
+
+                if (!string.IsNullOrWhiteSpace(user.SupervisorUserId))
+                {
+                    var oldSupervisor = await _userManager.FindByIdAsync(user.SupervisorUserId);
+                    oldSupervisorName = oldSupervisor?.FullName ?? "(unknown)";
+                }
+
+                if (!string.Equals(user.SupervisorUserId, request.SupervisorUserId, StringComparison.Ordinal))
+                {
+                    changes.Add($"Supervisor changed from: {oldSupervisorName} to: {newSupervisor!.FullName}");
+                    user.SupervisorUserId = request.SupervisorUserId;
+                }
+            }
+
+            if (!changes.Any())
+                return "No changes were made";
 
             var result = await _userManager.UpdateAsync(user);
             if (!result.Succeeded)
                 throw new BadRequestException(string.Join(";", result.Errors.Select(e => e.Description)));
 
-            var roles = await _userManager.GetRolesAsync(user);
+            await SendUserUpdatedEmailAsync(user, oldEmail, changes);
 
-            return new UserDTO
-            {
-                Id = user.Id,
-                FullName = user.FullName,
-                UserName = user.UserName ?? "",
-                Email = user.Email ?? "",
-                PhoneNumber = user.PhoneNumber ?? "",
-                EmailConfirmed = user.EmailConfirmed,
-                RoleName = roles.FirstOrDefault() ?? "",
-                IsBlocked = user.IsBlocked
-            };
+            return "User updated successfully";
         }
+
+
+        private bool TrackChange(
+    List<string> changes,
+    string fieldName,
+    string? oldValue,
+    string? newValue,
+    Action applyChange)
+        {
+            var oldNormalized = oldValue?.Trim() ?? string.Empty;
+            var newNormalized = newValue?.Trim() ?? string.Empty;
+
+            if (string.Equals(oldNormalized, newNormalized, StringComparison.Ordinal))
+                return false;
+
+            changes.Add($"{fieldName} changed from: {oldValue ?? "(empty)"} to: {newValue ?? "(empty)"}");
+            applyChange();
+            return true;
+        }
+        private async Task SendUserUpdatedEmailAsync(
+    ApplicationUser user,
+    string oldEmail,
+    List<string> changes)
+        {
+            if (!changes.Any())
+                return;
+
+            var changesHtml = string.Join("", changes.Select(c => $"<li>{c}</li>"));
+
+            await _emailSender.SendEmailAsync(
+                user.Email!,
+                "Brainova - Account Updated",
+                $"""
+        <h2>Hello {user.FullName}</h2>
+        <p>Your Brainova account information was updated by the administration.</p>
+        <p>The following changes were made:</p>
+        <ul>
+            {changesHtml}
+        </ul>
+        <p>If this was unexpected, please contact support immediately.</p>
+        <br/>
+        Brainova Team
+        """
+            );
+
+            if (!string.Equals(oldEmail, user.Email, StringComparison.OrdinalIgnoreCase))
+            {
+                await _emailSender.SendEmailAsync(
+                    oldEmail,
+                    "Brainova - Email Changed",
+                    $"""
+            <h2>Security Notice</h2>
+            <p>Your Brainova account email was changed.</p>
+            <p>New email address:</p>
+            <b>{user.Email}</b>
+            <p>If this change was not authorized, please contact support immediately.</p>
+            <br/>
+            Brainova Security
+            """
+                );
+            }
+        }
+        public async Task<string> ResetUserPasswordAsync(string userId, ChangeUserPasswordRequest request)
+        {
+            var user = await _userManager.FindByIdAsync(userId);
+
+            if (user == null)
+                throw new NotFoundException("User not found");
+
+            var isSamePassword = await _userManager.CheckPasswordAsync(user, request.NewPassword);
+
+            if (isSamePassword)
+                throw new BadRequestException("New password must be different from the old password.");
+
+            var token = await _userManager.GeneratePasswordResetTokenAsync(user);
+
+            var result = await _userManager.ResetPasswordAsync(user, token, request.NewPassword);
+
+            if (!result.Succeeded)
+                throw new BadRequestException(string.Join(", ", result.Errors.Select(e => e.Description)));
+
+            // send email
+            await _emailSender.SendEmailAsync(
+                user.Email!,
+                "Brainova Password Changed",
+                $"""
+        Hello {user.UserName},<br/>
+
+        Your password has been reset by the Brainova administrator.<br/>
+
+        Your new password is:
+        {request.NewPassword}
+        <br/>
+
+        Brainova Team
+        """
+            );
+
+            return "Password reset and email sent.";
+        }
+        //Delete
         public async Task<BulkDeleteUsersResponse> DeleteUsersAsync(DeleteUsersRequest request)
         {
             if (request.UserIds == null || !request.UserIds.Any())
@@ -386,43 +571,26 @@ namespace Brainova.BLL.Services.Classes
 
             return result;
         }
-        public async Task<string> ResetUserPasswordAsync(string userId, ChangeUserPasswordRequest request)
+
+        public async Task<string> DeleteUserAsync(string userId)
         {
             var user = await _userManager.FindByIdAsync(userId);
+            if (user is null) throw new NotFoundException("User not found");
 
-            if (user == null)
-                throw new NotFoundException("User not found");
+            var roles = await _userManager.GetRolesAsync(user);
+            if (roles.Contains("Supervisor"))
+            {
+                var hasStudents = await _userManager.Users.AnyAsync(u => u.SupervisorUserId == user.Id);
+                if (hasStudents)
+                    throw new BadRequestException("Can't delete supervisor: has assigned students");
+            }
 
-            var isSamePassword = await _userManager.CheckPasswordAsync(user, request.NewPassword);
-
-            if (isSamePassword)
-                throw new BadRequestException("New password must be different from the old password.");
-
-            var token = await _userManager.GeneratePasswordResetTokenAsync(user);
-
-            var result = await _userManager.ResetPasswordAsync(user, token, request.NewPassword);
-
+            var result = await _userManager.DeleteAsync(user);
             if (!result.Succeeded)
-                throw new BadRequestException(string.Join(", ", result.Errors.Select(e => e.Description)));
+                throw new BadRequestException(string.Join(";", result.Errors.Select(e => e.Description)));
 
-            // send email
-            await _emailSender.SendEmailAsync(
-                user.Email!,
-                "Brainova Password Changed",
-                $"""
-        Hello {user.UserName},<br/>
-
-        Your password has been reset by the Brainova administrator.<br/>
-
-        Your new password is:
-        {request.NewPassword}
-        <br/>
-
-        Brainova Team
-        """
-            );
-
-            return "Password reset and email sent.";
+            return "User deleted successfully";
         }
+
     }
 }

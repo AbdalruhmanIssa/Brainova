@@ -227,11 +227,13 @@ namespace Brainova.BLL.Services.Classes
         private async Task<string> CreateTokenAsync(ApplicationUser user)
         {
             var claims = new List<Claim>
-            {
-                new Claim("Name", user.UserName ?? ""),
-                new Claim("Email", user.Email ?? ""),
-                new Claim("Id", user.Id),
-            };
+{
+    new Claim("Name", user.UserName ?? ""),
+    new Claim("FullName", user.FullName ?? ""),
+    new Claim("Email", user.Email ?? ""),
+    new Claim("PhoneNumber", user.PhoneNumber ?? ""),
+    new Claim("Id", user.Id)
+};
 
             var roles = await _userManager.GetRolesAsync(user);
             foreach (var role in roles)

@@ -4,7 +4,7 @@ using Brainova.BLL.Services.Interface;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
-namespace Brainova.PL.Areas.Identity.Controllers
+namespace Brainova.PL.Controllers.Admin
 {
     [Area("Identity")]
     [Route("api/[area]/[controller]")]
@@ -62,14 +62,7 @@ namespace Brainova.PL.Areas.Identity.Controllers
         }
 
         // 👑 SuperAdmin only create admin
-        [HttpPost("create-admin")]
-        [Authorize(Roles = "SuperAdmin")]
-        public async Task<IActionResult> CreateAdmin(CreateUserRequest request)
-        {
-            var message = await _userService.CreateAdminAsync(request, Request);
-            return Ok(new { message });
-        }
-
+        
 
         [HttpPost("create-student")]
         public async Task<IActionResult> CreateStudent(CreateUserRequest request)
@@ -84,13 +77,7 @@ namespace Brainova.PL.Areas.Identity.Controllers
             var list = await _userService.GetSupervisorsAsync();
             return Ok(list);
         }
-        [HttpPost("assign-supervisor")]
-       
-        public async Task<IActionResult> AssignSupervisor(AssignSupervisorRequest request)
-        {
-            var msg = await _userService.AssignSupervisorAsync(request);
-            return Ok(new { message = msg });
-        }
+      
 
         [HttpDelete("{userId}")]
        
@@ -102,9 +89,11 @@ namespace Brainova.PL.Areas.Identity.Controllers
         [HttpPut("update/{userId}")]
         public async Task<IActionResult> UpdateUser([FromRoute] string userId, [FromBody] UpdateUserRequest request)
         {
-            var updatedUser = await _userService.UpdateUserAsync(userId, request);
-            return Ok(updatedUser);
+            var msg = await _userService.UpdateUserAsync(userId, request);
+            return Ok(new { message = msg });
         }
+
+   
         [HttpGet("{userId}")]
         public async Task<IActionResult> GetById([FromRoute] string userId)
         {
@@ -120,14 +109,6 @@ namespace Brainova.PL.Areas.Identity.Controllers
         {
             var result = await _userService.DeleteUsersAsync(request);
             return Ok(result);
-        }
-        [HttpPatch("change-password/{userId}")]
-        [Authorize(Roles = "SuperAdmin")]
-        public async Task<IActionResult> ResetPassword(string userId, ChangeUserPasswordRequest request)
-        {
-            var result = await _userService.ResetUserPasswordAsync(userId, request);
-
-            return Ok(new { message = result });
         }
     }
 

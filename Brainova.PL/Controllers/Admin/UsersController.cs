@@ -87,13 +87,13 @@ namespace Brainova.PL.Controllers.Admin
             return Ok(new { message = msg });
         }
         [HttpPut("update/{userId}")]
-        public async Task<IActionResult> UpdateUser([FromRoute] string userId, [FromBody] UpdateUserRequest request)
+        public async Task<IActionResult> UpdateUser(string userId, UpdateUserRequest request)
         {
-            var msg = await _userService.UpdateUserAsync(userId, request);
-            return Ok(new { message = msg });
+            var result = await _userService.UpdateUserAsync(userId, request);
+            return Ok(result);
         }
 
-   
+
         [HttpGet("{userId}")]
         public async Task<IActionResult> GetById([FromRoute] string userId)
         {

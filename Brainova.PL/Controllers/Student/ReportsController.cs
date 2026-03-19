@@ -46,17 +46,13 @@ namespace Brainova.PL.Controllers.Student
         [HttpGet("{reportId:guid}/pdf")]
         public async Task<IActionResult> DownloadReportPdf(Guid reportId, CancellationToken ct)
         {
-            var supervisorId = User.FindFirstValue("Id");
-            if (string.IsNullOrWhiteSpace(supervisorId))
+            var studentId = User.FindFirstValue("Id");
+            if (string.IsNullOrWhiteSpace(studentId))
                 return Unauthorized();
 
-            var pdfBytes = await _reportPdfService.GenerateSupervisorReportPdfAsync(supervisorId, reportId, ct);
+            var pdfBytes = await _reportPdfService.GenerateStudentReportPdfAsync(studentId, reportId, ct);
 
-            return File(
-                pdfBytes,
-                "application/pdf",
-                $"Brainova_Report_{reportId}.pdf"
-            );
+            return File(pdfBytes, "application/pdf", $"Brainova_Report_{reportId}.pdf");
         }
     }
 

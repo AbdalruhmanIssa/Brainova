@@ -202,7 +202,7 @@ namespace Brainova.BLL.Services.Classes
                 Email = request.Email,
                 PhoneNumber = request.PhoneNumber,
                 UserName = request.UserName,
-                EmailConfirmed = true,
+                EmailConfirmed = false,
                 IsBlocked = false,
                 SupervisorUserId = roleName == "Student" ? request.SupervisorUserId : null
             };
@@ -265,7 +265,7 @@ namespace Brainova.BLL.Services.Classes
                 NewRole = request.RoleName
             };
         }
-        public async Task<string> UpdateUserAsync(string userId, UpdateUserRequest request)
+        public async Task<UpdateUserResponse> UpdateUserAsync(string userId, UpdateUserRequest request)
         {
             var user = await _userManager.FindByIdAsync(userId);
             if (user is null)
@@ -364,7 +364,7 @@ namespace Brainova.BLL.Services.Classes
             }
 
             if (!changes.Any())
-                return "No changes were made";
+                throw new BadRequestException("No changes were made");
 
             var result = await _userManager.UpdateAsync(user);
             if (!result.Succeeded)
@@ -372,7 +372,17 @@ namespace Brainova.BLL.Services.Classes
 
             await SendUserUpdatedEmailAsync(user, oldEmail, changes);
 
-            return "User updated successfully";
+            var role = (await _userManager.GetRolesAsync(user)).FirstOrDefault() ?? "";
+
+            return new UpdateUserResponse
+            {
+                UserId = user.Id,
+                FullName = user.FullName,
+                UserName = user.UserName!,
+                RoleName = role,
+                PhoneNumber = user.PhoneNumber!,
+                SupervisorId = user.SupervisorUserId
+            };
         }
 
 

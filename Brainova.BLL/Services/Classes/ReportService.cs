@@ -99,7 +99,7 @@ namespace Brainova.BLL.Services.Classes
             return await _uow.Repo<Report>()
                 .Query()
                 .Where(r =>
-                    r.Case.Status == CaseStatus.ReportSubmitted &&
+                   ( r.Case.Status == CaseStatus.ReportSubmitted ||r.Case.Status==CaseStatus.Predicted) &&
                     r.Case.Student.SupervisorUserId == supervisorId)
                 .OrderByDescending(r => r.SubmittedAt)
                 .Select(r => new SupervisorNewReportResponse
@@ -170,7 +170,6 @@ namespace Brainova.BLL.Services.Classes
                 .Query()
                 .Include(r => r.Case)
                     .ThenInclude(c => c.Student)
-                        .ThenInclude(s => s.SupervisorUser)
                 .Include(r => r.Case)
                     .ThenInclude(c => c.AiResult)
                 .FirstOrDefaultAsync(r => r.Id == reportId);
@@ -181,12 +180,44 @@ namespace Brainova.BLL.Services.Classes
             if (report.Case.Student.SupervisorUserId != supervisorId)
                 throw new Exception("Not your student");
 
+            return await BuildPdfResponseAsync(report);
+        }
+        public async Task<ReportPdfResponse> GetStudentPdfDetailsAsync(string studentId, Guid reportId)
+        {
+            var report = await _uow.Repo<Report>()
+                .Query()
+                .Include(r => r.Case)
+                    .ThenInclude(c => c.Student)
+                .Include(r => r.Case)
+                    .ThenInclude(c => c.AiResult)
+                .FirstOrDefaultAsync(r => r.Id == reportId);
+
+            if (report == null)
+                throw new Exception("Report not found");
+
+            if (report.Case.StudentId != studentId)
+                throw new Exception("This report does not belong to you");
+
+            return await BuildPdfResponseAsync(report);
+        }
+        private async Task<ReportPdfResponse> BuildPdfResponseAsync(Report report)
+        {
             var answers = await _uow.Repo<ReportAnswer>()
                 .Query()
                 .Include(a => a.Question)
-                .Where(a => a.ReportId == reportId)
+                .Where(a => a.ReportId == report.Id)
                 .OrderBy(a => a.Question.Order)
                 .ToListAsync();
+
+            var supervisorName = "N/A";
+            if (!string.IsNullOrWhiteSpace(report.Case.Student.SupervisorUserId))
+            {
+                var supervisor = await _uow.Repo<ApplicationUser>()
+                    .Query()
+                    .FirstOrDefaultAsync(u => u.Id == report.Case.Student.SupervisorUserId);
+
+                supervisorName = supervisor?.FullName ?? "N/A";
+            }
 
             var probabilities = new List<ProbabilityItemResponse>();
 
@@ -194,22 +225,21 @@ namespace Brainova.BLL.Services.Classes
             {
                 try
                 {
-                    var values = JsonSerializer.Deserialize<float[]>(report.Case.AiResult.ProbabilitiesJson) ?? Array.Empty<float>();
+                    var arr = System.Text.Json.JsonSerializer.Deserialize<float[]>(report.Case.AiResult.ProbabilitiesJson);
 
-                    var labels = new[] { "Glioma", "Meningioma", "No Tumor", "Pituitary" };
-
-                    for (int i = 0; i < labels.Length && i < values.Length; i++)
+                    if (arr != null && arr.Length >= 4)
                     {
-                        probabilities.Add(new ProbabilityItemResponse
-                        {
-                            Label = labels[i],
-                            Value = values[i]
-                        });
+                        probabilities = new List<ProbabilityItemResponse>
+                {
+                    new ProbabilityItemResponse { Label = "Glioma", Value = arr[0] },
+                    new ProbabilityItemResponse { Label = "Meningioma", Value = arr[1] },
+                    new ProbabilityItemResponse { Label = "No Tumor", Value = arr[2] },
+                    new ProbabilityItemResponse { Label = "Pituitary", Value = arr[3] }
+                };
                     }
                 }
                 catch
                 {
-                    // leave empty if malformed json
                 }
             }
 
@@ -217,25 +247,21 @@ namespace Brainova.BLL.Services.Classes
             {
                 ReportId = report.Id,
                 CaseId = report.CaseId,
-
                 StudentId = report.Case.StudentId,
                 StudentName = report.Case.Student.FullName,
-                SupervisorName = report.Case.Student.SupervisorUser?.FullName ?? "Not Assigned",
-
-                SubmittedAt = report.SubmittedAt == default ? report.CreatedAt : report.SubmittedAt,
+                SupervisorName = supervisorName,
+                SubmittedAt = report.SubmittedAt,
                 CaseCreatedAt = report.Case.CreatedAt,
                 PredictionCreatedAt = report.Case.AiResult?.CreatedAt,
-
                 StoredFileName = report.Case.StoredFileName,
                 PredictionResult = report.Case.AiResult?.PredictionResult,
                 Probabilities = probabilities,
-
                 Answers = answers.Select(a => new ReportPdfAnswerResponse
                 {
                     QuestionId = a.QuestionId,
+                    Question = a.Question.Text,
                     Code = a.Question.Code,
-                    Question = a.QuestionTextSnapshot ?? a.Question.Text,
-                    Type = a.QuestionTypeSnapshot != 0 ? a.QuestionTypeSnapshot : a.Question.Type,
+                    Type = a.Question.Type,
                     AnswerText = a.AnswerText,
                     AnswerNumber = a.AnswerNumber,
                     AnswerBool = a.AnswerBool,
@@ -243,6 +269,5 @@ namespace Brainova.BLL.Services.Classes
                 }).ToList()
             };
         }
-
     }
 }

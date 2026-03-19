@@ -26,9 +26,9 @@ namespace Brainova.BLL.Services.Interface
         Task<string> CreateSupervisorAsync(CreateUserRequest request, HttpRequest httpRequest);
         Task<string> CreateAdminAsync(CreateUserRequest request, HttpRequest httpRequest);
         Task<string> CreateStudentAsync(CreateUserRequest request, HttpRequest httpRequest);
-  
+
         // Update
-        Task<string> UpdateUserAsync(string userId, UpdateUserRequest request);
+        Task<UpdateUserResponse> UpdateUserAsync(string userId, UpdateUserRequest request);
         Task<string> ResetUserPasswordAsync(string userId, ChangeUserPasswordRequest request);
 
         Task<ChangeUserRoleResponse> ChangeUserRoleAsync(ChangeUserRoleRequest request);

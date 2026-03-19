@@ -214,13 +214,14 @@ namespace Brainova.BLL.Services.Classes
 
             if (!result.Succeeded)
                 throw new BadRequestException(string.Join(";", result.Errors.Select(e => e.Description)));
-
+            
             await _emailSender.SendEmailAsync(
                 user.Email!,
                 "Brainova - Password set",
                 "<p>Your password has been set successfully. You can now login.</p>"
             );
-
+            var emailToken = await _userManager.GenerateEmailConfirmationTokenAsync(user);
+            await _userManager.ConfirmEmailAsync(user, emailToken);
             return "Password set successfully.";
         }
 

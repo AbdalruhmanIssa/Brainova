@@ -35,9 +35,11 @@ namespace Brainova.PL.Controllers.Student
             var dto = questions.Select(q => new ReportQuestionResponse
             {
                 Id = q.Id,
+                Code = q.Code,
                 Text = q.Text,
                 Type = q.Type,
                 Order = q.Order,
+                IsRequired = q.IsRequired,
                 Options = string.IsNullOrWhiteSpace(q.OptionsJson)
                     ? null
                     : System.Text.Json.JsonSerializer.Deserialize<List<string>>(q.OptionsJson)

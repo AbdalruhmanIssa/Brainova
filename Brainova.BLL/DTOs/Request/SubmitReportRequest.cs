@@ -4,7 +4,7 @@ using System.ComponentModel.DataAnnotations;
 
 namespace Brainova.BLL.DTOs.Request
 {
-    public class SubmitReportRequest
+    public class SubmitReportRequest    
     {
         [Required]
         public Guid CaseId { get; set; }
@@ -13,5 +13,5 @@ namespace Brainova.BLL.DTOs.Request
         public List<SubmitReportAnswerItem> Answers { get; set; } = new();
     }
 
-    
+
 }

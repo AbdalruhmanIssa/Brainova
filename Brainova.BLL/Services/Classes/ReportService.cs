@@ -146,7 +146,7 @@ namespace Brainova.BLL.Services.Classes
                 StoredFileName = report.Case.StoredFileName,
 
                 PredictionResult = report.Case.AiResult?.PredictionResult,
-              
+
 
                 Answers = answers.Select(a => new SupervisorReportAnswerResponse
                 {

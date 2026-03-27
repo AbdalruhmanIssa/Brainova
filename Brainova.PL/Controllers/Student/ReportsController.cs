@@ -17,7 +17,7 @@ namespace Brainova.PL.Controllers.Student
     {
         private readonly IReportQuestionService _qSvc;
         private readonly IReportService _rSvc;
-            private readonly IReportPdfService _reportPdfService;
+        private readonly IReportPdfService _reportPdfService;
 
         public ReportsController(IReportQuestionService qSvc, IReportService rSvc, IReportPdfService reportPdfService)
         {

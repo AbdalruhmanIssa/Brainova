@@ -5,7 +5,7 @@ using System.Text;
 
 namespace Brainova.BLL.DTOs.Request
 {
-    public class SubmitReportAnswerItem
+    public class SubmitReportAnswerItem   
     {
         [Required]
         public Guid QuestionId { get; set; }

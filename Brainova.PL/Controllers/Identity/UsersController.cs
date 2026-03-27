@@ -68,6 +68,7 @@ namespace Brainova.PL.Areas.Identity.Controllers
             var message = await _userService.CreateAdminAsync(request, Request);
             return Ok(new { message });
         }
+        
         [HttpGet("supervisors")]
         [AllowAnonymous]
         public async Task<IActionResult> GetSupervisors()

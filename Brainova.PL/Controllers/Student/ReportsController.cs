@@ -31,7 +31,18 @@ namespace Brainova.PL.Controllers.Student
         public async Task<IActionResult> GetQuestions()
         {
             var questions = await _qSvc.GetActiveAsync();
-            var dto = questions.Adapt<List<ReportQuestionResponse>>();
+
+            var dto = questions.Select(q => new ReportQuestionResponse
+            {
+                Id = q.Id,
+                Text = q.Text,
+                Type = q.Type,
+                Order = q.Order,
+                Options = string.IsNullOrWhiteSpace(q.OptionsJson)
+                    ? null
+                    : System.Text.Json.JsonSerializer.Deserialize<List<string>>(q.OptionsJson)
+            }).ToList();
+
             return Ok(dto);
         }
 

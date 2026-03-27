@@ -187,6 +187,7 @@ namespace Brainova.BLL.Services.Classes
                 if (string.IsNullOrWhiteSpace(request.SupervisorUserId))
                     throw new BadRequestException("SupervisorUserId is required for student");
 
+
                 var supervisor = await _userManager.FindByIdAsync(request.SupervisorUserId);
                 if (supervisor is null)
                     throw new NotFoundException("Supervisor not found");
@@ -241,7 +242,29 @@ namespace Brainova.BLL.Services.Classes
             if (user is null)
                 throw new NotFoundException("User not found");
 
-            var result = await _userRepository.ChangeUserRoleAsync(request.UserId, request.RoleName);
+          //  var result = await _userRepository.ChangeUserRoleAsync(request.UserId, request.RoleName);
+            var currentRoles = await _userManager.GetRolesAsync(user);
+            var oldRole = currentRoles.FirstOrDefault();
+
+            //  SAME ROLE return OK, no email no repo call
+            if (oldRole == request.RoleName)
+            {
+                return new ChangeUserRoleResponse
+                {
+                    UserId = user.Id,
+                    FullName = user.FullName,
+                    UserName = user.UserName ?? "",
+                    Email = user.Email ?? "",
+                    OldRole = oldRole,
+                    NewRole = request.RoleName,
+                    IsChanged = false
+                };
+            }
+
+            var result = await _userRepository.ChangeUserRoleAsync(
+                request.UserId,
+                request.RoleName
+                );
 
             if (!result.Success)
                 throw new BadRequestException(result.Message);
@@ -262,7 +285,8 @@ namespace Brainova.BLL.Services.Classes
                 UserName = user.UserName ?? "",
                 Email = user.Email ?? "",
                 OldRole = result.OldRole,
-                NewRole = request.RoleName
+                NewRole = request.RoleName,
+                IsChanged = true
             };
         }
         public async Task<UpdateUserResponse> UpdateUserAsync(string userId, UpdateUserRequest request)
@@ -362,9 +386,22 @@ namespace Brainova.BLL.Services.Classes
                     user.SupervisorUserId = request.SupervisorUserId;
                 }
             }
+            var role = (await _userManager.GetRolesAsync(user)).FirstOrDefault() ?? "";
+
 
             if (!changes.Any())
-                throw new BadRequestException("No changes were made");
+            {
+                return new UpdateUserResponse
+                {
+                    UserId = user.Id,
+                    FullName = user.FullName,
+                    UserName = user.UserName!,
+                    RoleName = role,
+                    PhoneNumber = user.PhoneNumber!,
+                    SupervisorId = user.SupervisorUserId,
+                    IsChanged = false
+                };
+            }
 
             var result = await _userManager.UpdateAsync(user);
             if (!result.Succeeded)
@@ -372,7 +409,6 @@ namespace Brainova.BLL.Services.Classes
 
             await SendUserUpdatedEmailAsync(user, oldEmail, changes);
 
-            var role = (await _userManager.GetRolesAsync(user)).FirstOrDefault() ?? "";
 
             return new UpdateUserResponse
             {
@@ -381,7 +417,8 @@ namespace Brainova.BLL.Services.Classes
                 UserName = user.UserName!,
                 RoleName = role,
                 PhoneNumber = user.PhoneNumber!,
-                SupervisorId = user.SupervisorUserId
+                SupervisorId = user.SupervisorUserId,
+                IsChanged = true
             };
         }
 
@@ -602,5 +639,6 @@ namespace Brainova.BLL.Services.Classes
             return "User deleted successfully";
         }
 
+       
     }
 }

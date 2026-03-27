@@ -8,5 +8,6 @@
         public string Email { get; set; } = null!;
         public string? OldRole { get; set; }
         public string NewRole { get; set; } = null!;
+        public bool IsChanged { get; set; }
     }
 }

@@ -13,6 +13,7 @@
         public string PhoneNumber { get; set; } = string.Empty;
 
         public string? SupervisorId { get; set; }
+        public  bool IsChanged { get; set; }
 
     }
 }

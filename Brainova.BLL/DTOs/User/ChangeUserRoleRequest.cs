@@ -9,5 +9,6 @@ namespace Brainova.BLL.DTOs.Auth
 
         [Required]
         public string RoleName { get; set; } = null!;
+     
     }
 }

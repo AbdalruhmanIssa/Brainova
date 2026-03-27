@@ -11,10 +11,7 @@ namespace Brainova.DAL.Modles
         public Guid QuestionId { get; set; }
         public ReportQuestion Question { get; set; } = default!;
 
-        public string? AnswerText { get; set; }
-        public decimal? AnswerNumber { get; set; }
-        public bool? AnswerBool { get; set; }
-        public string? AnswerJson { get; set; }
+        public string AnswerValue { get; set; } = default!;
 
         // snapshot (keeps report stable even if admin edits questions later)
         public string QuestionTextSnapshot { get; set; } = default!;

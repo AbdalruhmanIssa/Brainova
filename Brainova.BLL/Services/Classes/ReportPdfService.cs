@@ -1,9 +1,10 @@
 ﻿using Brainova.BLL.DTOs.Response;
 using Brainova.BLL.Services.Interface;
+using Brainova.DAL.Enums;
+using Microsoft.AspNetCore.Hosting;
 using QuestPDF.Fluent;
 using QuestPDF.Helpers;
 using QuestPDF.Infrastructure;
-using Microsoft.AspNetCore.Hosting;
 using System.Text.Json;
 
 namespace Brainova.BLL.Services.Classes
@@ -239,32 +240,10 @@ namespace Brainova.BLL.Services.Classes
 
         private static string FormatAnswer(ReportPdfAnswerResponse answer)
         {
-            if (!string.IsNullOrWhiteSpace(answer.AnswerText))
-                return answer.AnswerText;
+            if (string.IsNullOrWhiteSpace(answer.AnswerValue))
+                return "No answer";
 
-            if (answer.AnswerNumber.HasValue)
-                return answer.AnswerNumber.Value.ToString("0.##");
-
-            if (answer.AnswerBool.HasValue)
-                return answer.AnswerBool.Value ? "Yes" : "No";
-
-            if (!string.IsNullOrWhiteSpace(answer.AnswerJson))
-            {
-                try
-                {
-                    var arr = JsonSerializer.Deserialize<List<string>>(answer.AnswerJson);
-                    if (arr != null && arr.Count > 0)
-                        return string.Join(", ", arr);
-                }
-                catch
-                {
-                    return answer.AnswerJson;
-                }
-
-                return answer.AnswerJson;
-            }
-
-            return "No answer";
+            return answer.AnswerValue;
         }
     }
-}
+    }

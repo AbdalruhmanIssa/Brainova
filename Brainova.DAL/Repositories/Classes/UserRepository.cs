@@ -60,8 +60,8 @@ namespace Brainova.DAL.Repositories.Classes
             var currentRoles = await _userManager.GetRolesAsync(user);
             var oldRole = currentRoles.FirstOrDefault();
 
-            if (oldRole == roleName)
-                return (false, $"User is already in role '{roleName}'", oldRole);
+            //if (oldRole == roleName)
+            //    return (false, $"User is already in role '{roleName}'", oldRole);
 
             // block changing supervisor role if they still have students
             if (oldRole == "Supervisor" && roleName != "Supervisor")
@@ -70,7 +70,7 @@ namespace Brainova.DAL.Repositories.Classes
                     .AnyAsync(u => u.SupervisorUserId == user.Id);
 
                 if (hasStudents)
-                    return (false, "this supervisor still has assigned students", oldRole);
+                    return (false, "Cannot change role: this supervisor still has assigned students", oldRole);
             }
 
             var removeResult = await _userManager.RemoveFromRolesAsync(user, currentRoles);

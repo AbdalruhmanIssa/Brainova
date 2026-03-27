@@ -18,6 +18,6 @@ namespace Brainova.BLL.DTOs.Request
 
         public bool IsActive { get; set; } = true;
 
-        public string? OptionsJson { get; set; }
+        public List<string>? Options { get; set; }
     }
 }

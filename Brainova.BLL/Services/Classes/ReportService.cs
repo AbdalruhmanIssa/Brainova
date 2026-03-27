@@ -1,6 +1,7 @@
 ﻿
 using Brainova.BLL.DTOs.Request;
 using Brainova.BLL.DTOs.Response;
+using Brainova.BLL.Exceptions;
 using Brainova.BLL.Services.Interface;
 using Brainova.DAL.Enums;
 using Brainova.DAL.Modles;
@@ -26,23 +27,27 @@ namespace Brainova.BLL.Services.Classes
             var reportRepo = _uow.Repo<Report>();
             var questionRepo = _uow.Repo<ReportQuestion>();
             var answerRepo = _uow.Repo<ReportAnswer>();
+            //load case
 
             var mriCase = await caseRepo.GetByIdAsync(req.CaseId);
 
             if (mriCase == null)
-                throw new Exception("Case not found");
+                throw new NotFoundException("Case not found");
+            //check ownership
 
             if (mriCase.StudentId != studentId)
-                throw new Exception("You don't own this case");
+                throw new ForbiddenException("You don't own this case");
+            //check status (must be uploaded, not already submitted or closed)
 
             if (mriCase.Status != CaseStatus.Uploaded)
-                throw new Exception("Report already submitted or case closed");
+                throw new BadRequestException("Report already submitted or case closed");
 
             bool exists = await reportRepo.ExistsAsync(r =>
                 r.CaseId == req.CaseId && r.StudentId == studentId);
 
             if (exists)
-                throw new Exception("Report already exists for this case");
+                throw new BadRequestException("Report already exists for this case");
+            //load questions
 
             var questions = await questionRepo.Query()
                 .Where(q => q.IsActive)
@@ -50,7 +55,7 @@ namespace Brainova.BLL.Services.Classes
                 .ToListAsync();
 
             if (req.Answers.Count != questions.Count)
-                throw new Exception("All questions must be answered");
+                throw new BadRequestException("All questions must be answered");
 
             var report = new Report
             {
@@ -67,17 +72,15 @@ namespace Brainova.BLL.Services.Classes
                 var answer = req.Answers.FirstOrDefault(a => a.QuestionId == q.Id);
 
                 if (answer == null)
-                    throw new Exception($"Missing answer for question {q.Code}");
+                    throw new BadRequestException($"Missing answer for question {q.Code}");
+                ValidateAnswer(q, answer.AnswerValue);
 
                 var ans = new ReportAnswer
                 {
                     Id = Guid.NewGuid(),
                     ReportId = report.Id,
                     QuestionId = q.Id,
-                    AnswerText = answer.AnswerText,
-                    AnswerNumber = answer.AnswerNumber,
-                    AnswerBool = answer.AnswerBool,
-                    AnswerJson = answer.AnswerJson,
+                    AnswerValue = answer.AnswerValue,
 
                     QuestionTextSnapshot = q.Text,
                     QuestionTypeSnapshot = q.Type
@@ -123,10 +126,10 @@ namespace Brainova.BLL.Services.Classes
                 .FirstOrDefaultAsync(r => r.Id == reportId);
 
             if (report == null)
-                throw new Exception("Report not found");
+                throw new NotFoundException("Report not found");
 
             if (report.Case.Student.SupervisorUserId != supervisorId)
-                throw new Exception("Not your student");
+                throw new BadRequestException("Not your student");
 
             var answers = await _uow.Repo<ReportAnswer>()
                 .Query()
@@ -154,11 +157,7 @@ namespace Brainova.BLL.Services.Classes
                     Code = a.Question.Code,
                     Question = a.Question.Text,
                     Type = a.Question.Type,
-
-                    AnswerText = a.AnswerText,
-                    AnswerNumber = a.AnswerNumber,
-                    AnswerBool = a.AnswerBool,
-                    AnswerJson = a.AnswerJson
+                    AnswerValue = a.AnswerValue
                 }).ToList()
             };
 
@@ -175,10 +174,10 @@ namespace Brainova.BLL.Services.Classes
                 .FirstOrDefaultAsync(r => r.Id == reportId);
 
             if (report == null)
-                throw new Exception("Report not found");
+                throw new NotFoundException("Report not found");
 
             if (report.Case.Student.SupervisorUserId != supervisorId)
-                throw new Exception("Not your student");
+                throw new BadRequestException("Not your student");
 
             return await BuildPdfResponseAsync(report);
         }
@@ -193,10 +192,10 @@ namespace Brainova.BLL.Services.Classes
                 .FirstOrDefaultAsync(r => r.Id == reportId);
 
             if (report == null)
-                throw new Exception("Report not found");
+                throw new NotFoundException("Report not found");
 
             if (report.Case.StudentId != studentId)
-                throw new Exception("This report does not belong to you");
+                throw new BadRequestException("This report does not belong to you");
 
             return await BuildPdfResponseAsync(report);
         }
@@ -225,7 +224,9 @@ namespace Brainova.BLL.Services.Classes
             {
                 try
                 {
+                    //  the JSON is an array of floats in the order: [Glioma, Meningioma, No Tumor, Pituitary]
                     var arr = System.Text.Json.JsonSerializer.Deserialize<float[]>(report.Case.AiResult.ProbabilitiesJson);
+                    //  map them to the response DTO
 
                     if (arr != null && arr.Length >= 4)
                     {
@@ -262,12 +263,58 @@ namespace Brainova.BLL.Services.Classes
                     Question = a.Question.Text,
                     Code = a.Question.Code,
                     Type = a.Question.Type,
-                    AnswerText = a.AnswerText,
-                    AnswerNumber = a.AnswerNumber,
-                    AnswerBool = a.AnswerBool,
-                    AnswerJson = a.AnswerJson
+                    AnswerValue = a.AnswerValue
                 }).ToList()
             };
+        }
+        private static void ValidateAnswer(ReportQuestion question, string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+                throw new BadRequestException($"Answer for '{question.Code}' is required.");
+
+            switch (question.Type)
+            {
+                case ReportQuestionType.Text:
+                    return;
+
+                case ReportQuestionType.SingleChoice:
+                    ValidateSingleChoice(question, value);
+                    return;
+
+                default:
+                    throw new BadRequestException($"Unsupported question type for '{question.Code}'.");
+            }
+        }
+
+        private static void ValidateSingleChoice(ReportQuestion question, string value)
+        {
+            if (string.IsNullOrWhiteSpace(question.OptionsJson))
+                throw new BadRequestException($"Options not defined for '{question.Code}'.");
+
+            List<string>? options;
+            try
+            {
+                options = JsonSerializer.Deserialize<List<string>>(question.OptionsJson);
+            }
+            catch
+            {
+                throw new BadRequestException($"Invalid options configuration for '{question.Code}'.");
+            }
+
+            if (options == null || options.Count == 0)
+                throw new BadRequestException($"Options not defined for '{question.Code}'.");
+
+            var normalizedValue = value.Trim().ToLower();
+
+            var normalizedOptions = options
+                .Where(o => !string.IsNullOrWhiteSpace(o))
+                .Select(o => o.Trim().ToLower())
+                .ToList();
+
+            if (!normalizedOptions.Contains(normalizedValue))
+                throw new BadRequestException(
+                    $"Invalid answer '{value}' for '{question.Code}'. Allowed values: {string.Join(", ", options)}"
+                );
         }
     }
 }

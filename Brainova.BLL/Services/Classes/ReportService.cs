@@ -69,24 +69,30 @@ namespace Brainova.BLL.Services.Classes
 
             foreach (var q in questions)
             {
-                var answer = req.Answers.FirstOrDefault(a => a.QuestionId == q.Id);
+                var ans = req.Answers.FirstOrDefault(a => a.QuestionId == q.Id);
 
-                if (answer == null)
-                    throw new BadRequestException($"Missing answer for question {q.Code}");
-                ValidateAnswer(q, answer.AnswerValue);
+                var value = ans?.AnswerValue?.Trim();
 
-                var ans = new ReportAnswer
+                if (q.IsRequired && string.IsNullOrWhiteSpace(value))
+                    throw new BadRequestException($"Question '{q.Code}' is required.");
+
+                if (!string.IsNullOrWhiteSpace(value))
+                {
+                    ValidateAnswer(q, value);
+                }
+
+                var reportAnswer = new ReportAnswer
                 {
                     Id = Guid.NewGuid(),
                     ReportId = report.Id,
                     QuestionId = q.Id,
-                    AnswerValue = answer.AnswerValue,
+                    AnswerValue = value, // can be null
 
                     QuestionTextSnapshot = q.Text,
                     QuestionTypeSnapshot = q.Type
                 };
 
-                await answerRepo.AddAsync(ans);
+                await _uow.Repo<ReportAnswer>().AddAsync(reportAnswer);
             }
 
             mriCase.Status = CaseStatus.ReportSubmitted;

@@ -12,12 +12,8 @@ namespace Brainova.BLL.DTOs.Response
         public string StudentId { get; set; } = default!;
         public string? StudentName { get; set; }
         public DateTime SubmittedAt { get; set; }
-
         public string StoredFileName { get; set; } = default!;
-
         public string? PredictionResult { get; set; }
-
-
         public List<SupervisorReportAnswerResponse> Answers { get; set; } = new();
     }
 }

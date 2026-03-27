@@ -110,9 +110,10 @@ namespace Brainova.BLL.Services.Classes
             var token = await _userManager.GeneratePasswordResetTokenAsync(createdUser);
             var tokenEscaped = Uri.EscapeDataString(token);
 
+            // var link =
+            //     $"{httpRequest.Scheme}://{httpRequest.Host}/api/Identity/Auths/set-password?userId={createdUser.Id}&token={tokenEscaped}";
             var link =
-                $"{httpRequest.Scheme}://{httpRequest.Host}/api/Identity/Auths/set-password?userId={createdUser.Id}&token={tokenEscaped}";
-
+                   $"{httpRequest.Scheme}://{httpRequest.Host}/set-password.html?userId={createdUser.Id}&token={tokenEscaped}"; 
             await _emailSender.SendEmailAsync(
                 createdUser.Email!,
                 $"Brainova - Set your password ({roleName})",

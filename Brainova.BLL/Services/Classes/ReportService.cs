@@ -27,35 +27,60 @@ namespace Brainova.BLL.Services.Classes
             var reportRepo = _uow.Repo<Report>();
             var questionRepo = _uow.Repo<ReportQuestion>();
             var answerRepo = _uow.Repo<ReportAnswer>();
-            //load case
 
             var mriCase = await caseRepo.GetByIdAsync(req.CaseId);
 
             if (mriCase == null)
                 throw new NotFoundException("Case not found");
-            //check ownership
 
             if (mriCase.StudentId != studentId)
                 throw new ForbiddenException("You don't own this case");
-            //check status (must be uploaded, not already submitted or closed)
 
             if (mriCase.Status != CaseStatus.Uploaded)
                 throw new BadRequestException("Report already submitted or case closed");
 
-            bool exists = await reportRepo.ExistsAsync(r =>
+            bool reportExists = await reportRepo.ExistsAsync(r =>
                 r.CaseId == req.CaseId && r.StudentId == studentId);
 
-            if (exists)
+            if (reportExists)
                 throw new BadRequestException("Report already exists for this case");
-            //load questions
 
             var questions = await questionRepo.Query()
                 .Where(q => q.IsActive)
                 .OrderBy(q => q.Order)
                 .ToListAsync();
 
-            if (req.Answers.Count != questions.Count)
-                throw new BadRequestException("All questions must be answered");
+            if (!questions.Any())
+                throw new BadRequestException("No active report questions found");
+
+            // Make sure all submitted question ids belong to active questions
+            var activeQuestionIds = questions.Select(q => q.Id).ToHashSet();
+
+            var invalidSubmittedQuestion = req.Answers
+                .FirstOrDefault(a => !activeQuestionIds.Contains(a.QuestionId));
+
+            if (invalidSubmittedQuestion != null)
+                throw new BadRequestException("One or more submitted question ids are invalid");
+
+            // We need the first question to decide the conditional logic
+            var preliminaryAssessmentQuestion = questions
+                .FirstOrDefault(q => q.Code.Trim().ToLower() == "preliminary assesment");
+
+            if (preliminaryAssessmentQuestion == null)
+                throw new BadRequestException("Preliminary assessment question is missing");
+
+            var preliminaryAssessmentAnswer = req.Answers
+                .FirstOrDefault(a => a.QuestionId == preliminaryAssessmentQuestion.Id)?
+                .AnswerValue?
+                .Trim();
+
+            if (string.IsNullOrWhiteSpace(preliminaryAssessmentAnswer))
+                throw new BadRequestException("Preliminary assessment answer is required");
+
+            // Validate the first question itself first
+            ValidateAnswer(preliminaryAssessmentQuestion, preliminaryAssessmentAnswer);
+
+            bool isNoTumor = preliminaryAssessmentAnswer.Trim().ToLower() == "no tumor";
 
             var report = new Report
             {
@@ -69,30 +94,41 @@ namespace Brainova.BLL.Services.Classes
 
             foreach (var q in questions)
             {
-                var ans = req.Answers.FirstOrDefault(a => a.QuestionId == q.Id);
+                var submitted = req.Answers.FirstOrDefault(a => a.QuestionId == q.Id);
+                var value = submitted?.AnswerValue?.Trim();
 
-                var value = ans?.AnswerValue?.Trim();
+                bool shouldSkipBecauseNoTumor =
+                    isNoTumor &&
+                    (
+                        q.Code.Trim().ToLower() == "tumor size" ||
+                        q.Code.Trim().ToLower() == "tumor location" ||
+                        q.Code.Trim().ToLower() == "functional impact"
+                    );
 
-                if (q.IsRequired && string.IsNullOrWhiteSpace(value))
-                    throw new BadRequestException($"Question '{q.Code}' is required.");
-
-                if (!string.IsNullOrWhiteSpace(value))
+                if (shouldSkipBecauseNoTumor)
                 {
-                    ValidateAnswer(q, value);
+                    value = null;
+                }
+                else
+                {
+                    if (q.IsRequired && string.IsNullOrWhiteSpace(value))
+                        ValidateAnswer(q, value);
+
+                    if (!string.IsNullOrWhiteSpace(value))
+                        ValidateAnswer(q, value);
                 }
 
-                var reportAnswer = new ReportAnswer
+                var answer = new ReportAnswer
                 {
                     Id = Guid.NewGuid(),
                     ReportId = report.Id,
                     QuestionId = q.Id,
-                    AnswerValue = value, // can be null
-
+                    AnswerValue = value,
                     QuestionTextSnapshot = q.Text,
                     QuestionTypeSnapshot = q.Type
                 };
 
-                await _uow.Repo<ReportAnswer>().AddAsync(reportAnswer);
+                await answerRepo.AddAsync(answer);
             }
 
             mriCase.Status = CaseStatus.ReportSubmitted;

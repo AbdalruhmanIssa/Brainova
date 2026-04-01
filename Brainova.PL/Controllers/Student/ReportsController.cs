@@ -31,7 +31,20 @@ namespace Brainova.PL.Controllers.Student
         public async Task<IActionResult> GetQuestions()
         {
             var questions = await _qSvc.GetActiveAsync();
-            var dto = questions.Adapt<List<ReportQuestionResponse>>();
+
+            var dto = questions.Select(q => new ReportQuestionResponse
+            {
+                Id = q.Id,
+                Code = q.Code,
+                Text = q.Text,
+                Type = q.Type,
+                Order = q.Order,
+                IsRequired = q.IsRequired,
+                Options = string.IsNullOrWhiteSpace(q.OptionsJson)
+                    ? null
+                    : System.Text.Json.JsonSerializer.Deserialize<List<string>>(q.OptionsJson)
+            }).ToList();
+
             return Ok(dto);
         }
 
@@ -46,17 +59,13 @@ namespace Brainova.PL.Controllers.Student
         [HttpGet("{reportId:guid}/pdf")]
         public async Task<IActionResult> DownloadReportPdf(Guid reportId, CancellationToken ct)
         {
-            var supervisorId = User.FindFirstValue("Id");
-            if (string.IsNullOrWhiteSpace(supervisorId))
+            var studentId = User.FindFirstValue("Id");
+            if (string.IsNullOrWhiteSpace(studentId))
                 return Unauthorized();
 
-            var pdfBytes = await _reportPdfService.GenerateSupervisorReportPdfAsync(supervisorId, reportId, ct);
+            var pdfBytes = await _reportPdfService.GenerateStudentReportPdfAsync(studentId, reportId, ct);
 
-            return File(
-                pdfBytes,
-                "application/pdf",
-                $"Brainova_Report_{reportId}.pdf"
-            );
+            return File(pdfBytes, "application/pdf", $"Brainova_Report_{reportId}.pdf");
         }
     }
 

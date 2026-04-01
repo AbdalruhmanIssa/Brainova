@@ -27,10 +27,8 @@ namespace Brainova.DAL.Data.Configs
             b.Property(x => x.QuestionTextSnapshot).IsRequired().HasMaxLength(2000);
             b.Property(x => x.QuestionTypeSnapshot).IsRequired();
 
-            b.Property(x => x.AnswerText).HasColumnType("nvarchar(max)");
-            b.Property(x => x.AnswerJson).HasColumnType("nvarchar(max)");
-            b.Property(x => x.AnswerNumber)
- .HasPrecision(18, 4);
+            b.Property(x => x.AnswerValue).HasColumnType("nvarchar(max)");
+
         }
     }
 }

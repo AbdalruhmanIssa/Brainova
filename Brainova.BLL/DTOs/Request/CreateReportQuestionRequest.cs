@@ -3,7 +3,7 @@ using System.ComponentModel.DataAnnotations;
 
 namespace Brainova.BLL.DTOs.Request
 {
-    public class CreateReportQuestionRequest    
+    public class CreateReportQuestionRequest
     {
         [Required, MaxLength(100)]
         public string Code { get; set; } = null!;
@@ -13,10 +13,12 @@ namespace Brainova.BLL.DTOs.Request
 
         [Required]
         public ReportQuestionType Type { get; set; }
+
         public int Order { get; set; }
 
         public bool IsActive { get; set; } = true;
+        public bool IsRequired { get; set; }
 
-        public string? OptionsJson { get; set; }
+        public List<string>? Options { get; set; }
     }
 }

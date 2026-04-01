@@ -4,7 +4,7 @@ using System.Text;
 
 namespace Brainova.BLL.DTOs.Response
 {
-    public class SupervisorNewReportResponse    
+    public class SupervisorNewReportResponse
     {
         public Guid ReportId { get; set; }
         public Guid CaseId { get; set; }

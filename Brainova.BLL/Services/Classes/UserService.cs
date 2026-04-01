@@ -1,4 +1,5 @@
 ﻿using Brainova.BLL.DTOs.Auth;
+using Brainova.BLL.DTOs.Request;
 using Brainova.BLL.Exceptions;
 using Brainova.BLL.Services.Interface;
 using Brainova.DAL.Modles;
@@ -7,6 +8,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.UI.Services;
 using Microsoft.EntityFrameworkCore;
+using Brainova.BLL.DTOs.User;
 
 namespace Brainova.BLL.Services.Classes
 {
@@ -57,6 +59,21 @@ namespace Brainova.BLL.Services.Classes
             if (user == null) return null;
 
             var roles = await _userManager.GetRolesAsync(user);
+            var role = roles.FirstOrDefault();
+
+            string? supervisorId = null;
+            string? supervisorName = null;
+
+            if (role == "Student")
+            {
+                if (!string.IsNullOrEmpty(user.SupervisorUserId))
+                {
+                    var supervisor = await _userManager.FindByIdAsync(user.SupervisorUserId);
+
+                    supervisorId = supervisor?.Id;
+                    supervisorName = supervisor?.FullName;
+                }
+            }
 
             return new UserDTO
             {
@@ -66,8 +83,12 @@ namespace Brainova.BLL.Services.Classes
                 PhoneNumber = user.PhoneNumber,
                 Email = user.Email,
                 EmailConfirmed = user.EmailConfirmed,
-                RoleName = roles.FirstOrDefault(),
-                IsBlocked = user.IsBlocked
+                RoleName = role,
+                IsBlocked = user.IsBlocked,
+
+                // ✅ ضيفي هدول
+                SupervisorId = supervisorId,
+                SupervisorName = supervisorName
             };
         }
 

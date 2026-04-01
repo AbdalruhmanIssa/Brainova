@@ -5,8 +5,8 @@ using Microsoft.AspNetCore.Mvc;
 namespace Brainova.PL.Controllers.Student
 {
     [ApiController]
-    [Route("api/[area]/[controller]")]
     [Area("Student")]
+    [Route("api/[area]/Reports/{reportId:guid}/[controller]")]
     [Authorize(Roles = "Student")]
     public class FeedbacksController : ControllerBase
     {
@@ -17,7 +17,7 @@ namespace Brainova.PL.Controllers.Student
             _service = service;
         }
 
-        [HttpGet("{reportId:guid}")]
+        [HttpGet]
         public async Task<IActionResult> GetByReportId(Guid reportId)
         {
             var studentId = User.FindFirst("Id")?.Value;

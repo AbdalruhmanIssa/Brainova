@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.Text;
 
-namespace Brainova.BLL.DTOs.Auth
+namespace Brainova.BLL.DTOs.User
 {
     public class CreateUserRequest
     {
@@ -15,5 +15,6 @@ namespace Brainova.BLL.DTOs.Auth
         public string UserName { get; set; } = null!;
         [Required, Phone, MaxLength(20)]
         public string PhoneNumber { get; set; } = null!;
+        public string? SupervisorUserId { get; set; }
     }
 }

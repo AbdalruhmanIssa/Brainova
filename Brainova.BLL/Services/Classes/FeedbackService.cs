@@ -4,6 +4,7 @@ using Brainova.BLL.Exceptions;
 using Brainova.BLL.Services.Interface;
 using Brainova.DAL.Enums;
 using Brainova.DAL.Modles;
+using Brainova.DAL.Repositories.Classes;
 using Brainova.DAL.Repositories.Interface;
 using Microsoft.EntityFrameworkCore;
 
@@ -18,29 +19,55 @@ namespace Brainova.BLL.Services.Classes
             _uow = uow;
         }
 
-        public async Task<string> AddAsync(string supervisorId, CreateFeedbackRequest request)
+        public async Task<string> AddAsync(string supervisorId, Guid reportId, CreateFeedbackRequest request)
         {
+            if (string.IsNullOrWhiteSpace(supervisorId))
+                throw new UnauthorizedAccessException("Supervisor is not authenticated");
+
+            if (reportId == Guid.Empty)
+                throw new BadRequestException("ReportId is required");
+
+            if (request is null)
+                throw new BadRequestException("Request is required");
+
+            if (string.IsNullOrWhiteSpace(request.Comment))
+                throw new BadRequestException("Comment is required");
+
             var report = await _uow.Repo<Report>()
                 .Query()
                 .Include(r => r.Student)
                 .Include(r => r.Case)
-                .FirstOrDefaultAsync(r => r.Id == request.ReportId);
+                .FirstOrDefaultAsync(r => r.Id == reportId);
 
             if (report is null)
                 throw new NotFoundException("Report not found");
 
-            if (string.IsNullOrWhiteSpace(report.Student.SupervisorUserId) ||
-                report.Student.SupervisorUserId != supervisorId)
-            {
+            if (report.Student is null)
+                throw new BadRequestException("Student data is missing for this report");
+
+            if (report.Case is null)
+                throw new BadRequestException("MRI case data is missing for this report");
+
+            if (string.IsNullOrWhiteSpace(report.Student.SupervisorUserId))
+                throw new ForbiddenException("This student is not assigned to any supervisor");
+
+            if (report.Student.SupervisorUserId != supervisorId)
                 throw new ForbiddenException("You are not allowed to add feedback to this report");
-            }
+
+            var alreadyExists = await _uow.Repo<Feedback>()
+                .Query()
+                .AnyAsync(f => f.ReportId == reportId && f.SupervisorId == supervisorId);
+
+            if (alreadyExists)
+                throw new BadRequestException("Feedback already exists for this report");
 
             var feedback = new Feedback
             {
+                Id = Guid.NewGuid(),
                 ReportId = report.Id,
                 SupervisorId = supervisorId,
                 StudentId = report.StudentId,
-                Comment = request.Comment
+                Comment = request.Comment.Trim()
             };
 
             await _uow.Repo<Feedback>().AddAsync(feedback);
@@ -129,7 +156,7 @@ namespace Brainova.BLL.Services.Classes
             return data;
         }
 
-    public async Task<List<FeedbackResponse>> GetAllAsync()
+        public async Task<List<FeedbackResponse>> GetAllAsync()
         {
             var data = await _uow.Repo<Feedback>()
                 .Query()
@@ -160,6 +187,7 @@ namespace Brainova.BLL.Services.Classes
 
             return data;
         }
+
         public async Task<string> UpdateAsync(string? supervisorId, Guid feedbackId, UpdateFeedbackRequest request)
         {
             var feedback = await _uow.Repo<Feedback>()
@@ -169,13 +197,13 @@ namespace Brainova.BLL.Services.Classes
             if (feedback is null)
                 throw new NotFoundException("Feedback not found");
 
-            if (string.IsNullOrWhiteSpace(request.Comment))
+            if (request is null || string.IsNullOrWhiteSpace(request.Comment))
                 throw new BadRequestException("Comment is required");
 
             if (supervisorId != null && feedback.SupervisorId != supervisorId)
                 throw new ForbiddenException("You are not allowed to update this feedback");
 
-            feedback.Comment = request.Comment;
+            feedback.Comment = request.Comment.Trim();
 
             _uow.Repo<Feedback>().Update(feedback);
             await _uow.SaveChangesAsync();
@@ -200,7 +228,23 @@ namespace Brainova.BLL.Services.Classes
 
             return "Feedback deleted successfully";
         }
+        public async Task<List<FeedbackResponse>> GetBySupervisorAsync(string supervisorId)
+        {
+            var feedbacks = await _uow.Repo<Feedback>()
+                .Query()
+                .Where(f => f.SupervisorId == supervisorId)
+                .Select(f => new FeedbackResponse
+                {
+                    Id = f.Id,
+                    ReportId = f.ReportId,
+                    SupervisorId = f.SupervisorId,
+                    StudentId = f.StudentId,
+                    Comment = f.Comment,
+                    CreatedAt = f.CreatedAt
+                })
+                .ToListAsync();
 
-      
+            return feedbacks;
+        }
     }
 }

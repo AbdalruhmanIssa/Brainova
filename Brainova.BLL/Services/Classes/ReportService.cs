@@ -1,6 +1,7 @@
 ﻿
 using Brainova.BLL.DTOs.Request;
 using Brainova.BLL.DTOs.Response;
+using Brainova.BLL.Exceptions;
 using Brainova.BLL.Services.Interface;
 using Brainova.DAL.Enums;
 using Brainova.DAL.Modles;
@@ -30,27 +31,56 @@ namespace Brainova.BLL.Services.Classes
             var mriCase = await caseRepo.GetByIdAsync(req.CaseId);
 
             if (mriCase == null)
-                throw new Exception("Case not found");
+                throw new NotFoundException("Case not found");
 
             if (mriCase.StudentId != studentId)
-                throw new Exception("You don't own this case");
+                throw new ForbiddenException("You don't own this case");
 
             if (mriCase.Status != CaseStatus.Uploaded)
-                throw new Exception("Report already submitted or case closed");
+                throw new BadRequestException("Report already submitted or case closed");
 
-            bool exists = await reportRepo.ExistsAsync(r =>
+            bool reportExists = await reportRepo.ExistsAsync(r =>
                 r.CaseId == req.CaseId && r.StudentId == studentId);
 
-            if (exists)
-                throw new Exception("Report already exists for this case");
+            if (reportExists)
+                throw new BadRequestException("Report already exists for this case");
 
             var questions = await questionRepo.Query()
                 .Where(q => q.IsActive)
                 .OrderBy(q => q.Order)
                 .ToListAsync();
 
-            if (req.Answers.Count != questions.Count)
-                throw new Exception("All questions must be answered");
+            if (!questions.Any())
+                throw new BadRequestException("No active report questions found");
+
+            // Make sure all submitted question ids belong to active questions
+            var activeQuestionIds = questions.Select(q => q.Id).ToHashSet();
+
+            var invalidSubmittedQuestion = req.Answers
+                .FirstOrDefault(a => !activeQuestionIds.Contains(a.QuestionId));
+
+            if (invalidSubmittedQuestion != null)
+                throw new BadRequestException("One or more submitted question ids are invalid");
+
+            // We need the first question to decide the conditional logic
+            var preliminaryAssessmentQuestion = questions
+                .FirstOrDefault(q => q.Code.Trim().ToLower() == "preliminary assesment");
+
+            if (preliminaryAssessmentQuestion == null)
+                throw new BadRequestException("Preliminary assessment question is missing");
+
+            var preliminaryAssessmentAnswer = req.Answers
+                .FirstOrDefault(a => a.QuestionId == preliminaryAssessmentQuestion.Id)?
+                .AnswerValue?
+                .Trim();
+
+            if (string.IsNullOrWhiteSpace(preliminaryAssessmentAnswer))
+                throw new BadRequestException("Preliminary assessment answer is required");
+
+            // Validate the first question itself first
+            ValidateAnswer(preliminaryAssessmentQuestion, preliminaryAssessmentAnswer);
+
+            bool isNoTumor = preliminaryAssessmentAnswer.Trim().ToLower() == "no tumor";
 
             var report = new Report
             {
@@ -64,26 +94,41 @@ namespace Brainova.BLL.Services.Classes
 
             foreach (var q in questions)
             {
-                var answer = req.Answers.FirstOrDefault(a => a.QuestionId == q.Id);
+                var submitted = req.Answers.FirstOrDefault(a => a.QuestionId == q.Id);
+                var value = submitted?.AnswerValue?.Trim();
 
-                if (answer == null)
-                    throw new Exception($"Missing answer for question {q.Code}");
+                bool shouldSkipBecauseNoTumor =
+                    isNoTumor &&
+                    (
+                        q.Code.Trim().ToLower() == "tumor size" ||
+                        q.Code.Trim().ToLower() == "tumor location" ||
+                        q.Code.Trim().ToLower() == "functional impact"
+                    );
 
-                var ans = new ReportAnswer
+                if (shouldSkipBecauseNoTumor)
+                {
+                    value = null;
+                }
+                else
+                {
+                    if (q.IsRequired && string.IsNullOrWhiteSpace(value))
+                        ValidateAnswer(q, value);
+
+                    if (!string.IsNullOrWhiteSpace(value))
+                        ValidateAnswer(q, value);
+                }
+
+                var answer = new ReportAnswer
                 {
                     Id = Guid.NewGuid(),
                     ReportId = report.Id,
                     QuestionId = q.Id,
-                    AnswerText = answer.AnswerText,
-                    AnswerNumber = answer.AnswerNumber,
-                    AnswerBool = answer.AnswerBool,
-                    AnswerJson = answer.AnswerJson,
-
+                    AnswerValue = value,
                     QuestionTextSnapshot = q.Text,
                     QuestionTypeSnapshot = q.Type
                 };
 
-                await answerRepo.AddAsync(ans);
+                await answerRepo.AddAsync(answer);
             }
 
             mriCase.Status = CaseStatus.ReportSubmitted;
@@ -99,7 +144,7 @@ namespace Brainova.BLL.Services.Classes
             return await _uow.Repo<Report>()
                 .Query()
                 .Where(r =>
-                    r.Case.Status == CaseStatus.ReportSubmitted &&
+                   (r.Case.Status == CaseStatus.ReportSubmitted || r.Case.Status == CaseStatus.Predicted) &&
                     r.Case.Student.SupervisorUserId == supervisorId)
                 .OrderByDescending(r => r.SubmittedAt)
                 .Select(r => new SupervisorNewReportResponse
@@ -123,10 +168,10 @@ namespace Brainova.BLL.Services.Classes
                 .FirstOrDefaultAsync(r => r.Id == reportId);
 
             if (report == null)
-                throw new Exception("Report not found");
+                throw new NotFoundException("Report not found");
 
             if (report.Case.Student.SupervisorUserId != supervisorId)
-                throw new Exception("Not your student");
+                throw new BadRequestException("Not your student");
 
             var answers = await _uow.Repo<ReportAnswer>()
                 .Query()
@@ -154,11 +199,7 @@ namespace Brainova.BLL.Services.Classes
                     Code = a.Question.Code,
                     Question = a.Question.Text,
                     Type = a.Question.Type,
-
-                    AnswerText = a.AnswerText,
-                    AnswerNumber = a.AnswerNumber,
-                    AnswerBool = a.AnswerBool,
-                    AnswerJson = a.AnswerJson
+                    AnswerValue = a.AnswerValue
                 }).ToList()
             };
 
@@ -170,23 +211,54 @@ namespace Brainova.BLL.Services.Classes
                 .Query()
                 .Include(r => r.Case)
                     .ThenInclude(c => c.Student)
-                        .ThenInclude(s => s.SupervisorUser)
                 .Include(r => r.Case)
                     .ThenInclude(c => c.AiResult)
                 .FirstOrDefaultAsync(r => r.Id == reportId);
 
             if (report == null)
-                throw new Exception("Report not found");
+                throw new NotFoundException("Report not found");
 
             if (report.Case.Student.SupervisorUserId != supervisorId)
-                throw new Exception("Not your student");
+                throw new BadRequestException("Not your student");
 
+            return await BuildPdfResponseAsync(report);
+        }
+        public async Task<ReportPdfResponse> GetStudentPdfDetailsAsync(string studentId, Guid reportId)
+        {
+            var report = await _uow.Repo<Report>()
+                .Query()
+                .Include(r => r.Case)
+                    .ThenInclude(c => c.Student)
+                .Include(r => r.Case)
+                    .ThenInclude(c => c.AiResult)
+                .FirstOrDefaultAsync(r => r.Id == reportId);
+
+            if (report == null)
+                throw new NotFoundException("Report not found");
+
+            if (report.Case.StudentId != studentId)
+                throw new BadRequestException("This report does not belong to you");
+
+            return await BuildPdfResponseAsync(report);
+        }
+        private async Task<ReportPdfResponse> BuildPdfResponseAsync(Report report)
+        {
             var answers = await _uow.Repo<ReportAnswer>()
                 .Query()
                 .Include(a => a.Question)
-                .Where(a => a.ReportId == reportId)
+                .Where(a => a.ReportId == report.Id)
                 .OrderBy(a => a.Question.Order)
                 .ToListAsync();
+
+            var supervisorName = "N/A";
+            if (!string.IsNullOrWhiteSpace(report.Case.Student.SupervisorUserId))
+            {
+                var supervisor = await _uow.Repo<ApplicationUser>()
+                    .Query()
+                    .FirstOrDefaultAsync(u => u.Id == report.Case.Student.SupervisorUserId);
+
+                supervisorName = supervisor?.FullName ?? "N/A";
+            }
 
             var probabilities = new List<ProbabilityItemResponse>();
 
@@ -194,22 +266,23 @@ namespace Brainova.BLL.Services.Classes
             {
                 try
                 {
-                    var values = JsonSerializer.Deserialize<float[]>(report.Case.AiResult.ProbabilitiesJson) ?? Array.Empty<float>();
+                    //  the JSON is an array of floats in the order: [Glioma, Meningioma, No Tumor, Pituitary]
+                    var arr = System.Text.Json.JsonSerializer.Deserialize<float[]>(report.Case.AiResult.ProbabilitiesJson);
+                    //  map them to the response DTO
 
-                    var labels = new[] { "Glioma", "Meningioma", "No Tumor", "Pituitary" };
-
-                    for (int i = 0; i < labels.Length && i < values.Length; i++)
+                    if (arr != null && arr.Length >= 4)
                     {
-                        probabilities.Add(new ProbabilityItemResponse
-                        {
-                            Label = labels[i],
-                            Value = values[i]
-                        });
+                        probabilities = new List<ProbabilityItemResponse>
+                {
+                    new ProbabilityItemResponse { Label = "Glioma", Value = arr[0] },
+                    new ProbabilityItemResponse { Label = "Meningioma", Value = arr[1] },
+                    new ProbabilityItemResponse { Label = "No Tumor", Value = arr[2] },
+                    new ProbabilityItemResponse { Label = "Pituitary", Value = arr[3] }
+                };
                     }
                 }
                 catch
                 {
-                    // leave empty if malformed json
                 }
             }
 
@@ -217,32 +290,73 @@ namespace Brainova.BLL.Services.Classes
             {
                 ReportId = report.Id,
                 CaseId = report.CaseId,
-
                 StudentId = report.Case.StudentId,
                 StudentName = report.Case.Student.FullName,
-                SupervisorName = report.Case.Student.SupervisorUser?.FullName ?? "Not Assigned",
-
-                SubmittedAt = report.SubmittedAt == default ? report.CreatedAt : report.SubmittedAt,
+                SupervisorName = supervisorName,
+                SubmittedAt = report.SubmittedAt,
                 CaseCreatedAt = report.Case.CreatedAt,
                 PredictionCreatedAt = report.Case.AiResult?.CreatedAt,
-
                 StoredFileName = report.Case.StoredFileName,
                 PredictionResult = report.Case.AiResult?.PredictionResult,
                 Probabilities = probabilities,
-
                 Answers = answers.Select(a => new ReportPdfAnswerResponse
                 {
                     QuestionId = a.QuestionId,
+                    Question = a.Question.Text,
                     Code = a.Question.Code,
-                    Question = a.QuestionTextSnapshot ?? a.Question.Text,
-                    Type = a.QuestionTypeSnapshot != 0 ? a.QuestionTypeSnapshot : a.Question.Type,
-                    AnswerText = a.AnswerText,
-                    AnswerNumber = a.AnswerNumber,
-                    AnswerBool = a.AnswerBool,
-                    AnswerJson = a.AnswerJson
+                    Type = a.Question.Type,
+                    AnswerValue = a.AnswerValue
                 }).ToList()
             };
         }
+        private static void ValidateAnswer(ReportQuestion question, string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+                throw new BadRequestException($"Answer for '{question.Code}' is required.");
 
+            switch (question.Type)
+            {
+                case ReportQuestionType.Text:
+                    return;
+
+                case ReportQuestionType.SingleChoice:
+                    ValidateSingleChoice(question, value);
+                    return;
+
+                default:
+                    throw new BadRequestException($"Unsupported question type for '{question.Code}'.");
+            }
+        }
+
+        private static void ValidateSingleChoice(ReportQuestion question, string value)
+        {
+            if (string.IsNullOrWhiteSpace(question.OptionsJson))
+                throw new BadRequestException($"Options not defined for '{question.Code}'.");
+
+            List<string>? options;
+            try
+            {
+                options = JsonSerializer.Deserialize<List<string>>(question.OptionsJson);
+            }
+            catch
+            {
+                throw new BadRequestException($"Invalid options configuration for '{question.Code}'.");
+            }
+
+            if (options == null || options.Count == 0)
+                throw new BadRequestException($"Options not defined for '{question.Code}'.");
+
+            var normalizedValue = value.Trim().ToLower();
+
+            var normalizedOptions = options
+                .Where(o => !string.IsNullOrWhiteSpace(o))
+                .Select(o => o.Trim().ToLower())
+                .ToList();
+
+            if (!normalizedOptions.Contains(normalizedValue))
+                throw new BadRequestException(
+                    $"Invalid answer '{value}' for '{question.Code}'. Allowed values: {string.Join(", ", options)}"
+                );
+        }
     }
 }

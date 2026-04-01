@@ -11,6 +11,7 @@ namespace Brainova.BLL.Services.Interface
         Task AddAsync(CreateReportQuestionRequest req);
         Task<List<ReportQuestion>> GetActiveAsync();
         Task<List<ReportQuestion>> GetAllAsync();
+        Task UpdateAsync(Guid id, UpdateReportQuestionRequest req);
         Task ToggleActiveAsync(Guid id);
     }
 }

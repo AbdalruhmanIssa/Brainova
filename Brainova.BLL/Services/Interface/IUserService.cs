@@ -1,4 +1,7 @@
 ﻿using Brainova.BLL.DTOs.Auth;
+using Brainova.BLL.DTOs.Request;
+using Brainova.BLL.DTOs.User;
+
 using Microsoft.AspNetCore.Http;
 using System;
 using System.Collections.Generic;

@@ -17,6 +17,7 @@ namespace Brainova.PL.Controllers.Admin
         {
             _service = service;
         }
+
         [HttpGet]
         public async Task<IActionResult> GetAll()
         {
@@ -27,7 +28,7 @@ namespace Brainova.PL.Controllers.Admin
         [HttpPut("{feedbackId:guid}")]
         public async Task<IActionResult> Update(Guid feedbackId, [FromBody] UpdateFeedbackRequest request)
         {
-            var message = await _service.UpdateAsync(null, feedbackId, request); //  null = Admin
+            var message = await _service.UpdateAsync(null, feedbackId, request);
             return Ok(new { message });
         }
 
@@ -36,6 +37,12 @@ namespace Brainova.PL.Controllers.Admin
         {
             var message = await _service.DeleteAsync(null, feedbackId);
             return Ok(new { message });
+        }
+        [HttpGet("by-supervisor/{supervisorId}")]
+        public async Task<IActionResult> GetBySupervisor(string supervisorId)
+        {
+            var data = await _service.GetBySupervisorAsync(supervisorId);
+            return Ok(data);
         }
     }
 }

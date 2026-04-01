@@ -1,12 +1,10 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+﻿using System.ComponentModel.DataAnnotations;
+
 namespace Brainova.BLL.DTOs.Request
 {
     public class UpdateFeedbackRequest
     {
-        public string Comment { get; set; } = null!;
+        [Required, MinLength(3), MaxLength(3000)]
+        public string Comment { get; set; } = default!;
     }
 }

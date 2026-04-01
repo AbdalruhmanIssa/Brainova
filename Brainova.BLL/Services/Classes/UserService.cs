@@ -17,18 +17,21 @@ namespace Brainova.BLL.Services.Classes
         private readonly UserManager<ApplicationUser> _userManager;
         private readonly IEmailSender _emailSender;
         private readonly IUnitOfWork _uow;
-      
+        private readonly IHttpContextAccessor _httpContextAccessor;
+
 
         public UserService(
             IUserRepository userRepository,
             UserManager<ApplicationUser> userManager,
             IEmailSender emailSender,
-            IUnitOfWork uow)
+            IUnitOfWork uow,
+            IHttpContextAccessor httpContextAccessor)
         {
             _userRepository = userRepository;
             _userManager = userManager;
             _emailSender = emailSender;
             _uow = uow;
+            _httpContextAccessor = httpContextAccessor;
         }
         //GET
 
@@ -295,6 +298,21 @@ namespace Brainova.BLL.Services.Classes
             if (user is null)
                 throw new NotFoundException("User not found");
 
+            var currentUserId = _httpContextAccessor.HttpContext?.User.FindFirst("Id")?.Value;
+            var isSelfUpdate = currentUserId == userId;
+
+            if (!isSelfUpdate)
+            {
+                var currentUser = await _userManager.FindByIdAsync(currentUserId!);
+                if (currentUser is null)
+                    throw new UnauthorizedAccessException("Unauthorized");
+
+                var currentUserRoles = await _userManager.GetRolesAsync(currentUser);
+
+                if (!currentUserRoles.Contains("Admin") && !currentUserRoles.Contains("SuperAdmin"))
+                    throw new ForbiddenException("You are not allowed to update other users");
+            }
+
             var userRoles = await _userManager.GetRolesAsync(user);
             var isStudent = userRoles.Contains("Student");
 
@@ -370,6 +388,7 @@ namespace Brainova.BLL.Services.Classes
             {
                 user.PhoneNumber = request.PhoneNumber;
             });
+
             if (isStudent)
             {
                 string oldSupervisorName = "(unknown)";
@@ -386,8 +405,8 @@ namespace Brainova.BLL.Services.Classes
                     user.SupervisorUserId = request.SupervisorUserId;
                 }
             }
-            var role = (await _userManager.GetRolesAsync(user)).FirstOrDefault() ?? "";
 
+            var role = userRoles.FirstOrDefault() ?? "";
 
             if (!changes.Any())
             {
@@ -407,8 +426,10 @@ namespace Brainova.BLL.Services.Classes
             if (!result.Succeeded)
                 throw new BadRequestException(string.Join(";", result.Errors.Select(e => e.Description)));
 
-            await SendUserUpdatedEmailAsync(user, oldEmail, changes);
-
+            if (!isSelfUpdate)
+            {
+                await SendUserUpdatedEmailAsync(user, oldEmail, changes);
+            }
 
             return new UpdateUserResponse
             {

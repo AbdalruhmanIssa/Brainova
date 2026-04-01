@@ -12,5 +12,8 @@ namespace Brainova.BLL.Services.Interface
     {
         Task<MriUploadResponse> CreateAsync(string studentId, MriUploadRequest request, CancellationToken ct = default);
         Task<string?> GetStoredFileNameAsync(Guid caseId, CancellationToken ct = default);
+        Task<PagedResponse<StudentCaseDetailsResponse>>
+    GetMyCasesAsync(string studentId, StudentCasesQuery query, CancellationToken ct = default);
+
     }
 }

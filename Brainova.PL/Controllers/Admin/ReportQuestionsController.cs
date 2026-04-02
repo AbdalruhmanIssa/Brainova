@@ -1,5 +1,6 @@
 ﻿
 using Brainova.BLL.DTOs.Request;
+using Brainova.BLL.DTOs.Response.Report;
 using Brainova.BLL.Services.Interface;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -30,8 +31,29 @@ namespace Brainova.PL.Controllers.Admin
         [HttpGet]
         public async Task<IActionResult> GetAll()
         {
-            var data = await _svc.GetAllAsync();
-            return Ok(data);
+            var questions = await _svc.GetAllAsync();
+
+            var dto = questions.Select(q => new AdminReportQuestionResponse
+            {
+                Id = q.Id,
+                Code = q.Code,
+                Text = q.Text,
+                Type = q.Type,
+                Order = q.Order,
+                IsActive = q.IsActive,
+                IsRequired= q.IsRequired,
+                Options = string.IsNullOrWhiteSpace(q.OptionsJson)
+                    ? null
+                    : System.Text.Json.JsonSerializer.Deserialize<List<string>>(q.OptionsJson)
+            }).ToList();
+
+            return Ok(dto);
+        }
+        [HttpPut("{id:guid}")]
+        public async Task<IActionResult> Update(Guid id, [FromBody] UpdateReportQuestionRequest req)
+        {
+            await _svc.UpdateAsync(id, req);
+            return Ok(new { message = "Question updated successfully" });
         }
 
         [HttpPatch("{id:guid}/toggle")]

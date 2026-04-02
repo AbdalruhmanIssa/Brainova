@@ -9,10 +9,6 @@ namespace Brainova.BLL.DTOs.Request
     {
         [Required]
         public Guid QuestionId { get; set; }
-
-        public string? AnswerText { get; set; }
-        public decimal? AnswerNumber { get; set; }
-        public bool? AnswerBool { get; set; }
-        public string? AnswerJson { get; set; }
+        public string AnswerValue { get; set; } = default!;
     }
 }

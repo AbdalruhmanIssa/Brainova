@@ -51,5 +51,24 @@ namespace Brainova.PL.Controllers.Student
 
             return PhysicalFile(path, "image/jpeg");
         }
+        [HttpGet("my-cases")]
+        public async Task<IActionResult> GetMyCases([FromQuery] StudentCasesQuery query, CancellationToken ct)
+        {
+            var studentId = User.FindFirst("Id")?.Value;
+            if (string.IsNullOrWhiteSpace(studentId))
+                return Unauthorized();
+
+            var response = await _service.GetMyCasesAsync(studentId, query, ct);
+
+            foreach (var item in response.Items)
+            {
+                item.ImageUrl = $"{Request.Scheme}://{Request.Host}{item.ImageUrl}";
+
+                if (!string.IsNullOrWhiteSpace(item.GradcamUrl))
+                    item.GradcamUrl = $"{Request.Scheme}://{Request.Host}{item.GradcamUrl}";
+            }
+
+            return Ok(response);
+        }
     }
 }

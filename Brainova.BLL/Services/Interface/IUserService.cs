@@ -1,4 +1,5 @@
 ﻿using Brainova.BLL.DTOs.Auth;
+using Brainova.BLL.DTOs.Response;
 using Brainova.BLL.DTOs.User;
 using Microsoft.AspNetCore.Http;
 using System;
@@ -13,7 +14,7 @@ namespace Brainova.BLL.Services.Interface
         Task<List<UserDTO>> GetAllAsync();
         Task<UserDTO?> GetByIdAsync(string userId);
         Task<List<SupervisorOptionResponse>> GetSupervisorsAsync();
-        Task<List<UserDTO>> GetMyStudentsAsync(string supervisorUserId);
+        Task<List<SupervisorStudentListItemResponse>> GetSupervisorStudentsAsync(string supervisorUserId);
 
 
         // Block/Unblock

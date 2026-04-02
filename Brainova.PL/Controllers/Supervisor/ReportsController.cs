@@ -1,4 +1,5 @@
 ﻿using Brainova.BLL.DTOs.Response;
+using Brainova.BLL.DTOs.Response.Report;
 using Brainova.BLL.Services.Classes;
 using Brainova.BLL.Services.Interface;
 using Microsoft.AspNetCore.Authorization;
@@ -24,10 +25,15 @@ namespace Brainova.PL.Controllers.Supervisor
         // GET: api/Supervisor/Reports/new
   
         [HttpGet("new")]
-        public async Task<IActionResult> GetNew()
+        public async Task<IActionResult> GetNew(
+    [FromQuery] int page = 1,
+    [FromQuery] int pageSize = 10)
         {
-            var supervisorId = User.FindFirst("Id")?.Value!;
-            var reports = await _svc.GetNewForSupervisorAsync(supervisorId);
+            var supervisorId = User.FindFirst("Id")?.Value;
+            if (string.IsNullOrWhiteSpace(supervisorId))
+                return Unauthorized();
+
+            var reports = await _svc.GetNewForSupervisorAsync(supervisorId, page, pageSize);
             return Ok(reports);
         }
 

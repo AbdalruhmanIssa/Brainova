@@ -3,7 +3,7 @@ using System;
 using System.Collections.Generic;
 using System.Text;
 
-namespace Brainova.BLL.DTOs.Response
+namespace Brainova.BLL.DTOs.Response.Report
 {
     public class SupervisorReportAnswerResponse
     {

@@ -1,6 +1,7 @@
 ﻿
 using Brainova.BLL.DTOs.Request;
 using Brainova.BLL.DTOs.Response;
+using Brainova.BLL.DTOs.Response.Report;
 using Brainova.BLL.Exceptions;
 using Brainova.BLL.Services.Interface;
 using Brainova.DAL.Enums;
@@ -139,23 +140,40 @@ namespace Brainova.BLL.Services.Classes
             return report.Id;
         }
 
-        public async Task<List<SupervisorNewReportResponse>> GetNewForSupervisorAsync(string supervisorId)
+        public async Task<PagedResponse<SupervisorNewReportResponse>> GetNewForSupervisorAsync(
+      string supervisorId,
+      int page,
+      int pageSize)
         {
-            return await _uow.Repo<Report>()
+            var query = _uow.Repo<Report>()
                 .Query()
                 .Where(r =>
-                   ( r.Case.Status == CaseStatus.ReportSubmitted ||r.Case.Status==CaseStatus.Predicted) &&
-                    r.Case.Student.SupervisorUserId == supervisorId)
-                .OrderByDescending(r => r.SubmittedAt)
+                    r.Case.Student.SupervisorUserId == supervisorId &&
+                    !_uow.Repo<Feedback>().Query().Any(f => f.ReportId == r.Id))
+                .OrderByDescending(r => r.SubmittedAt);
+
+            var totalCount = await query.CountAsync();
+
+            var items = await query
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize)
                 .Select(r => new SupervisorNewReportResponse
                 {
                     ReportId = r.Id,
                     CaseId = r.CaseId,
                     SubmittedAt = r.SubmittedAt,
                     StudentId = r.Case.StudentId,
-                    StudentName = r.Case.Student.FullName // or UserName if that’s what you want
+                    StudentName = r.Case.Student.FullName
                 })
                 .ToListAsync();
+
+            return new PagedResponse<SupervisorNewReportResponse>
+            {
+                Items = items,
+                Page = page,
+                PageSize = pageSize,
+                TotalCount = totalCount
+            };
         }
         public async Task<SupervisorReportDetailsRawResponse> GetSupervisorDetailsAsync(string supervisorId, Guid reportId)
         {

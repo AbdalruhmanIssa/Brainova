@@ -1,4 +1,4 @@
-﻿using Brainova.BLL.DTOs.Response;
+﻿using Brainova.BLL.DTOs.Response.Report;
 using Brainova.BLL.Services.Interface;
 using Brainova.DAL.Enums;
 using Microsoft.AspNetCore.Hosting;

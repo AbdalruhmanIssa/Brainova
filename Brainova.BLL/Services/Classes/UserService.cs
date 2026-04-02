@@ -1,4 +1,5 @@
 ﻿using Brainova.BLL.DTOs.Auth;
+using Brainova.BLL.DTOs.Response;
 using Brainova.BLL.DTOs.User;
 using Brainova.BLL.Exceptions;
 using Brainova.BLL.Services.Interface;
@@ -138,27 +139,39 @@ namespace Brainova.BLL.Services.Classes
 
 
 
-        public async Task<List<UserDTO>> GetMyStudentsAsync(string supervisorUserId)
-        {
-            var students = await _userRepository.GetStudentsOfSupervisorAsync(supervisorUserId);
+ 
+public async Task<List<SupervisorStudentListItemResponse>> GetSupervisorStudentsAsync(string supervisorUserId)
+    {
+        var students = await _userManager.Users
+            .Where(u => u.SupervisorUserId == supervisorUserId)
+            .ToListAsync();
 
-            var dtos = new List<UserDTO>();
-            foreach (var s in students)
+        var studentIds = students.Select(s => s.Id).ToList();
+
+        var reportCounts = await _uow.Repo<Report>()
+            .Query()
+            .Where(r => studentIds.Contains(r.StudentId))
+            .GroupBy(r => r.StudentId)
+            .Select(g => new
             {
-                dtos.Add(new UserDTO
-                {
-                    Id = s.Id,
-                    FullName = s.FullName,
-                    UserName = s.UserName ?? "",
-                    Email = s.Email ?? "",
-                    PhoneNumber = s.PhoneNumber ?? "",
-                    EmailConfirmed = s.EmailConfirmed,
-                    RoleName = "Student"
-                });
-            }
+                StudentId = g.Key,
+                Count = g.Count()
+            })
+            .ToListAsync();
 
-            return dtos;
-        }
+        return students.Select(s => new SupervisorStudentListItemResponse
+        {
+            StudentId = s.Id,
+            FullName = s.FullName,
+            UserName = s.UserName ?? "",
+            Email = s.Email ?? "",
+            PhoneNumber = s.PhoneNumber ?? "",
+            ReportsCount = reportCounts.FirstOrDefault(x => x.StudentId == s.Id)?.Count ?? 0
+        }).ToList();
+    }
+
+           
+
         //Block/Unblock
 
         public Task<bool> BlockUserAsync(string userId) => _userRepository.BlockUserAsync(userId);

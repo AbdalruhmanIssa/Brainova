@@ -14,6 +14,10 @@ namespace Brainova.BLL.Services.Interface
         Task<string?> GetStoredFileNameAsync(Guid caseId, CancellationToken ct = default);
         Task<PagedResponse<StudentCaseDetailsResponse>>
     GetMyCasesAsync(string studentId, StudentCasesQuery query, CancellationToken ct = default);
+        Task<PagedResponse<SupervisorStudentCaseDetailsResponse>> GetSupervisorCasesAsync(
+    string supervisorId,
+    SupervisorCasesQuery query,
+    CancellationToken ct = default);
 
     }
 }

@@ -44,5 +44,11 @@ namespace Brainova.PL.Controllers.Admin
             var data = await _service.GetBySupervisorAsync(supervisorId);
             return Ok(data);
         }
+        [HttpGet("by-supervisor/{supervisorId}")]
+        public async Task<IActionResult> GetBySupervisorAsync(string supervisorId)
+        {
+            var data = await _service.GetBySupervisorAsync(supervisorId);
+            return Ok(data);
+        }
     }
 }

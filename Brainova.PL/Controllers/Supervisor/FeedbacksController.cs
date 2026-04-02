@@ -47,5 +47,6 @@ namespace Brainova.PL.Controllers.Supervisor
             var data = await _service.GetByReportIdAsync(reportId);
             return Ok(data);
         }
+    
     }
 }

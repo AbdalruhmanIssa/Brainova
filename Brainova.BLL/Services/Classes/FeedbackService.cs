@@ -55,8 +55,8 @@ namespace Brainova.BLL.Services.Classes
                 throw new ForbiddenException("You are not allowed to add feedback to this report");
 
             var alreadyExists = await _uow.Repo<Feedback>()
-                .Query()
-                .AnyAsync(f => f.ReportId == reportId && f.SupervisorId == supervisorId);
+               .Query()
+               .AnyAsync(f => f.ReportId == reportId);
 
             if (alreadyExists)
                 throw new BadRequestException("Feedback already exists for this report");
@@ -67,7 +67,8 @@ namespace Brainova.BLL.Services.Classes
                 ReportId = report.Id,
                 SupervisorId = supervisorId,
                 StudentId = report.StudentId,
-                Comment = request.Comment.Trim()
+                Comment = request.Comment.Trim(),
+                IsSeen = false
             };
 
             await _uow.Repo<Feedback>().AddAsync(feedback);
@@ -80,37 +81,28 @@ namespace Brainova.BLL.Services.Classes
             return "Feedback added successfully";
         }
 
-        public async Task<List<FeedbackResponse>> GetByReportIdAsync(Guid reportId)
+        public async Task<List<FeedbackResponse>> GetBySupervisorAsync(string supervisorId)
         {
-            var data = await _uow.Repo<Feedback>()
+            var feedbacks = await _uow.Repo<Feedback>()
                 .Query()
-                .Where(f => f.ReportId == reportId)
-                .Join(
-                    _uow.Repo<ApplicationUser>().Query(),
-                    f => f.SupervisorId,
-                    u => u.Id,
-                    (f, sup) => new { f, sup }
-                )
-                .Join(
-                    _uow.Repo<ApplicationUser>().Query(),
-                    x => x.f.StudentId,
-                    stu => stu.Id,
-                    (x, stu) => new FeedbackResponse
-                    {
-                        Id = x.f.Id,
-                        ReportId = x.f.ReportId,
-                        SupervisorId = x.f.SupervisorId,
-                        SupervisorName = x.sup.FullName,
-                        StudentId = x.f.StudentId,
-                        StudentName = stu.FullName,
-                        Comment = x.f.Comment,
-                        CreatedAt = x.f.CreatedAt
-                    }
-                )
-                .OrderByDescending(x => x.CreatedAt)
+                .Where(f => f.SupervisorId == supervisorId)
+                .Select(f => new FeedbackResponse
+                {
+                    Id = f.Id,
+                    ReportId = f.ReportId,
+
+                    SupervisorId = f.SupervisorId,
+                    SupervisorName = f.Supervisor.FullName,
+
+                    StudentId = f.StudentId,
+                    StudentName = f.Student.FullName,
+
+                    Comment = f.Comment,
+                    CreatedAt = f.CreatedAt
+                })
                 .ToListAsync();
 
-            return data;
+            return feedbacks;
         }
 
         public async Task<List<FeedbackResponse>> GetForStudentAsync(string studentId, Guid reportId)
@@ -155,7 +147,6 @@ namespace Brainova.BLL.Services.Classes
 
             return data;
         }
-
         public async Task<List<FeedbackResponse>> GetAllAsync()
         {
             var data = await _uow.Repo<Feedback>()
@@ -228,23 +219,91 @@ namespace Brainova.BLL.Services.Classes
 
             return "Feedback deleted successfully";
         }
-        public async Task<List<FeedbackResponse>> GetBySupervisorAsync(string supervisorId)
+
+        public async Task<List<FeedbackResponse>> GetByReportIdAsync(Guid reportId)
         {
-            var feedbacks = await _uow.Repo<Feedback>()
+            var data = await _uow.Repo<Feedback>()
                 .Query()
-                .Where(f => f.SupervisorId == supervisorId)
-                .Select(f => new FeedbackResponse
-                {
-                    Id = f.Id,
-                    ReportId = f.ReportId,
-                    SupervisorId = f.SupervisorId,
-                    StudentId = f.StudentId,
-                    Comment = f.Comment,
-                    CreatedAt = f.CreatedAt
-                })
+                .Where(f => f.ReportId == reportId)
+                .Join(
+                    _uow.Repo<ApplicationUser>().Query(),
+                    f => f.SupervisorId,
+                    sup => sup.Id,
+                    (f, sup) => new { f, sup }
+                )
+                .Join(
+                    _uow.Repo<ApplicationUser>().Query(),
+                    x => x.f.StudentId,
+                    stu => stu.Id,
+                    (x, stu) => new FeedbackResponse
+                    {
+                        Id = x.f.Id,
+                        ReportId = x.f.ReportId,
+                        SupervisorId = x.f.SupervisorId,
+                        SupervisorName = x.sup.FullName,
+                        StudentId = x.f.StudentId,
+                        StudentName = stu.FullName,
+                        Comment = x.f.Comment,
+                        CreatedAt = x.f.CreatedAt
+                    }
+                )
+                .OrderByDescending(x => x.CreatedAt)
                 .ToListAsync();
 
-            return feedbacks;
+            return data;
+        }
+        public async Task<List<FeedbackResponse>> GetUnseenForStudentAsync(string studentId)
+        {
+            var data = await _uow.Repo<Feedback>()
+                .Query()
+                .Where(f => f.StudentId == studentId && !f.IsSeen)
+                .Join(
+                    _uow.Repo<ApplicationUser>().Query(),
+                    f => f.SupervisorId,
+                    u => u.Id,
+                    (f, sup) => new { f, sup }
+                )
+                .Join(
+                    _uow.Repo<ApplicationUser>().Query(),
+                    x => x.f.StudentId,
+                    stu => stu.Id,
+                    (x, stu) => new FeedbackResponse
+                    {
+                        Id = x.f.Id,
+                        ReportId = x.f.ReportId,
+                        SupervisorId = x.f.SupervisorId,
+                        SupervisorName = x.sup.FullName,
+                        StudentId = x.f.StudentId,
+                        StudentName = stu.FullName,
+                        Comment = x.f.Comment,
+                        CreatedAt = x.f.CreatedAt
+                    }
+                )
+                .OrderByDescending(x => x.CreatedAt)
+                .ToListAsync();
+
+            return data;
+        }
+        public async Task<string> MarkAsSeenAsync(string studentId, Guid feedbackId)
+        {
+            var feedback = await _uow.Repo<Feedback>()
+                .Query()
+                .FirstOrDefaultAsync(f => f.Id == feedbackId);
+
+            if (feedback is null)
+                throw new NotFoundException("Feedback not found");
+
+            if (feedback.StudentId != studentId)
+                throw new ForbiddenException("You are not allowed to update this feedback");
+
+            if (!feedback.IsSeen)
+            {
+                feedback.IsSeen = true;
+                _uow.Repo<Feedback>().Update(feedback);
+                await _uow.SaveChangesAsync();
+            }
+
+            return "Feedback marked as seen";
         }
     }
-}
+    }

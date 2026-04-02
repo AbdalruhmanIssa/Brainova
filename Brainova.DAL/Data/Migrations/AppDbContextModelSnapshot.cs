@@ -155,6 +155,9 @@ namespace Brainova.DAL.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");
 
+                    b.Property<bool>("IsSeen")
+                        .HasColumnType("bit");
+
                     b.Property<Guid>("ReportId")
                         .HasColumnType("uniqueidentifier");
 

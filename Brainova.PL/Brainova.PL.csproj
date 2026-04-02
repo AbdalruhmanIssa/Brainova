@@ -33,4 +33,9 @@
     </Content>
   </ItemGroup>
 
+  <ItemGroup>
+    <Folder Include="App_Data\gradcam\" />
+    <Folder Include="App_Data\mri\" />
+  </ItemGroup>
+
 </Project>

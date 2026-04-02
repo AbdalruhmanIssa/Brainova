@@ -212,17 +212,7 @@ namespace Brainova.DAL.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uniqueidentifier");
 
-                    b.Property<bool?>("AnswerBool")
-                        .HasColumnType("bit");
-
-                    b.Property<string>("AnswerJson")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<decimal?>("AnswerNumber")
-                        .HasPrecision(18, 4)
-                        .HasColumnType("decimal(18,4)");
-
-                    b.Property<string>("AnswerText")
+                    b.Property<string>("AnswerValue")
                         .HasColumnType("nvarchar(max)");
 
                     b.Property<DateTime>("CreatedAt")
@@ -270,6 +260,9 @@ namespace Brainova.DAL.Migrations
                         .HasColumnType("datetime2");
 
                     b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsRequired")
                         .HasColumnType("bit");
 
                     b.Property<string>("OptionsJson")

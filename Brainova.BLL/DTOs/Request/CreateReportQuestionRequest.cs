@@ -17,7 +17,8 @@ namespace Brainova.BLL.DTOs.Request
         public int Order { get; set; }
 
         public bool IsActive { get; set; } = true;
+        public bool IsRequired { get; set; }
 
-        public string? OptionsJson { get; set; }
+        public List<string>? Options { get; set; }
     }
 }

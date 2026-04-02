@@ -32,12 +32,24 @@ namespace Brainova.PL.Controllers.Supervisor
         [HttpDelete("{feedbackId:guid}")]
         public async Task<IActionResult> Delete(Guid feedbackId)
         {
-            var supervisorId = User.FindFirst("Id")?.Value;
-            if (string.IsNullOrWhiteSpace(supervisorId))
-                return Unauthorized();
+            try
+            {
+                var supervisorId = User.FindFirst("Id")?.Value;
+                if (string.IsNullOrWhiteSpace(supervisorId))
+                    return Unauthorized();
 
-            var message = await _service.DeleteAsync(supervisorId, feedbackId);
-            return Ok(new { message });
+                var message = await _service.DeleteAsync(supervisorId, feedbackId);
+                return Ok(new { message });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new
+                {
+                    success = false,
+                    message = ex.Message,
+                    inner = ex.InnerException?.Message
+                });
+            }
         }
     }
-}
+    }

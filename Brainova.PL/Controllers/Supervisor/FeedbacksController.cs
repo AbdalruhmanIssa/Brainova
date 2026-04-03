@@ -23,13 +23,13 @@ namespace Brainova.PL.Controllers.Supervisor
         {
             try
             {
-                var supervisorId = User.FindFirst("Id")?.Value;
-                if (string.IsNullOrWhiteSpace(supervisorId))
-                    return Unauthorized();
+            var supervisorId = User.FindFirst("Id")?.Value;
+            if (string.IsNullOrWhiteSpace(supervisorId))
+                return Unauthorized();
 
-                var message = await _service.AddAsync(supervisorId, reportId, request);
-                return Ok(new { message });
-            }
+            var message = await _service.AddAsync(supervisorId, reportId, request);
+            return Ok(new { message });
+        }
             catch (Exception ex)
             {
                 return StatusCode(500, new
@@ -44,7 +44,11 @@ namespace Brainova.PL.Controllers.Supervisor
         [HttpGet]
         public async Task<IActionResult> GetByReportId(Guid reportId)
         {
-            var data = await _service.GetByReportIdAsync(reportId);
+            var supervisorId = User.FindFirst("Id")?.Value;
+            if (string.IsNullOrWhiteSpace(supervisorId))
+                return Unauthorized();
+
+            var data = await _service.GetForSupervisorAsync(supervisorId, reportId);
             return Ok(data);
         }
     

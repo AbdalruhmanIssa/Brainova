@@ -28,7 +28,7 @@ namespace Brainova.DAL.Data.Configs
             b.Property(x => x.QuestionTypeSnapshot).IsRequired();
 
             b.Property(x => x.AnswerValue).HasColumnType("nvarchar(max)");
-
+  
         }
     }
 }

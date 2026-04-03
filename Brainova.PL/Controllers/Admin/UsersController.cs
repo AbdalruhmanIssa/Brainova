@@ -4,12 +4,12 @@ using Brainova.BLL.Services.Interface;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
-namespace Brainova.PL.Areas.Identity.Controllers
+namespace Brainova.PL.Controllers.Admin
 {
     [Area("Identity")]
     [Route("api/[area]/[controller]")]
     [ApiController]
-    [Authorize(Roles = "Admin,SuperAdmin")] // default for the whole controller
+    [Authorize] // default for the whole controller
     public class UsersController : ControllerBase
     {
         private readonly IUserService _userService;
@@ -21,7 +21,8 @@ namespace Brainova.PL.Areas.Identity.Controllers
 
         // ✅ Admin only (SuperAdmin excluded if you want)
         [HttpGet("all")]
-       
+        [Authorize(Roles = "Admin,SuperAdmin")] // Only Admin and SuperAdmin can update users
+
         public async Task<IActionResult> GetAll()
         {
             var users = await _userService.GetAllAsync();
@@ -30,6 +31,8 @@ namespace Brainova.PL.Areas.Identity.Controllers
 
         // ✅ Admin + SuperAdmin
         [HttpPatch("block/{userId}")]
+        [Authorize(Roles = "Admin,SuperAdmin")] // Only Admin and SuperAdmin can update users
+
         public async Task<IActionResult> Block(string userId)
         {
             await _userService.BlockUserAsync(userId);
@@ -40,12 +43,16 @@ namespace Brainova.PL.Areas.Identity.Controllers
 
         // ✅ Admin + SuperAdmin
         [HttpPatch("unblock/{userId}")]
+        [Authorize(Roles = "Admin,SuperAdmin")] // Only Admin and SuperAdmin can update users
+
         public async Task<IActionResult> Unblock([FromRoute] string userId)
         {
             var ok = await _userService.UnBlockUserAsync(userId);
             return ok ? Ok(true) : NotFound(false);
         }
         [HttpGet("isblocked/{userId}")]
+        [Authorize(Roles = "Admin,SuperAdmin")] // Only Admin and SuperAdmin can update users
+
         public async Task<IActionResult> IsBlocked([FromRoute] string userId)
         {
             var blocked = await _userService.IsBlockedAsync(userId);
@@ -55,6 +62,8 @@ namespace Brainova.PL.Areas.Identity.Controllers
 
         // ✅ Admin + SuperAdmin create supervisor
         [HttpPost("create-supervisor")]
+        [Authorize(Roles = "Admin,SuperAdmin")] // Only Admin and SuperAdmin can update users
+
         public async Task<IActionResult> CreateSupervisor(CreateUserRequest request)
         {
             var message = await _userService.CreateSupervisorAsync(request, Request);
@@ -62,11 +71,14 @@ namespace Brainova.PL.Areas.Identity.Controllers
         }
 
         // 👑 SuperAdmin only create admin
-        [HttpPost("create-admin")]
-        [Authorize(Roles = "SuperAdmin")]
-        public async Task<IActionResult> CreateAdmin(CreateUserRequest request)
+        
+
+        [HttpPost("create-student")]
+        [Authorize(Roles = "Admin,SuperAdmin")] // Only Admin and SuperAdmin can update users
+
+        public async Task<IActionResult> CreateStudent(CreateUserRequest request)
         {
-            var message = await _userService.CreateAdminAsync(request, Request);
+            var message = await _userService.CreateStudentAsync(request, Request);
             return Ok(new { message });
         }
         
@@ -77,20 +89,42 @@ namespace Brainova.PL.Areas.Identity.Controllers
             var list = await _userService.GetSupervisorsAsync();
             return Ok(list);
         }
-        [HttpPost("assign-supervisor")]
-       
-        public async Task<IActionResult> AssignSupervisor(AssignSupervisorRequest request)
-        {
-            var msg = await _userService.AssignSupervisorAsync(request);
-            return Ok(new { message = msg });
-        }
+      
 
         [HttpDelete("{userId}")]
-       
+        [Authorize(Roles = "Admin,SuperAdmin")] // Only Admin and SuperAdmin can update users
+
+
         public async Task<IActionResult> DeleteUser([FromRoute] string userId)
         {
             var msg = await _userService.DeleteUserAsync(userId);
             return Ok(new { message = msg });
+        }
+        [HttpPut("update/{userId}")]
+        public async Task<IActionResult> UpdateUser(string userId, UpdateUserRequest request)
+        {
+            var result = await _userService.UpdateUserAsync(userId, request);
+            return Ok(result);
+        }
+
+
+        [HttpGet("{userId}")]
+        
+        public async Task<IActionResult> GetById([FromRoute] string userId)
+        {
+            var user = await _userService.GetByIdAsync(userId);
+
+            if (user == null)
+                return NotFound(new { message = "User not found" });
+
+            return Ok(user);
+        }
+        [HttpDelete("bulk-delete")]
+        [Authorize(Roles = "Admin,SuperAdmin")] // Only Admin and SuperAdmin can update users
+        public async Task<IActionResult> DeleteUsers([FromBody] DeleteUsersRequest request)
+        {
+            var result = await _userService.DeleteUsersAsync(request);
+            return Ok(result);
         }
     }
 

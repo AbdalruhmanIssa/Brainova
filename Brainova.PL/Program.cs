@@ -38,7 +38,7 @@ builder.Services.AddScoped<IReportQuestionService, ReportQuestionService>();
 builder.Services.AddScoped<IReportService, ReportService>();
 builder.Services.AddScoped<IReportPdfService, ReportPdfService>();
 builder.Services.AddScoped<ISeedData, SeedData>();
-
+builder.Services.AddScoped<IFeedbackService, FeedbackService>();
 // Register ONNX session as Singleton (heavy object)
 //builder.Services.AddSingleton(sp =>
 //{

@@ -10,7 +10,7 @@ namespace Brainova.DAL.Modles
 
         public int Order { get; set; }
         public bool IsActive { get; set; } = true;
-        public bool IsRequired { get; set; } = true;
+        public bool IsRequired { get; set; }=true;
 
         // For choices: JSON array string e.g. ["Glioma","Meningioma"]
         public string? OptionsJson { get; set; }

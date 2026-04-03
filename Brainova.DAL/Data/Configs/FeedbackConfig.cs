@@ -39,6 +39,7 @@ namespace Brainova.DAL.Data.Configs
                 .OnDelete(DeleteBehavior.Restrict);
             b.HasIndex(x => x.ReportId).IsUnique();
 
+            b.HasIndex(x => x.ReportId).IsUnique();
         }
     }
 }

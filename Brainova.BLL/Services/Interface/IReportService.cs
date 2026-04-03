@@ -1,6 +1,7 @@
 ﻿
 using Brainova.BLL.DTOs.Request;
 using Brainova.BLL.DTOs.Response;
+using Brainova.BLL.DTOs.Response.Report;
 using Brainova.DAL.Modles;
 
 namespace Brainova.BLL.Services.Interface

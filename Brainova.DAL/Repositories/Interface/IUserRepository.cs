@@ -14,7 +14,7 @@ namespace Brainova.DAL.Repositories.Interface
         Task<bool> UnBlockUserAsync(string userId);
         Task<bool> IsBlockedAsync(string userId);
 
-        Task<bool> ChangeUserRoleAsync(string userId, string roleName);
+        Task<(bool Success, string Message, string? OldRole)> ChangeUserRoleAsync(string userId, string roleName);
 
         // Create without password + assign role (Option A)
         Task<(bool Success, string Message, ApplicationUser? User)> CreateUserWithRoleAsync(ApplicationUser user, string roleName);

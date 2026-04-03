@@ -1,6 +1,6 @@
 ﻿using Brainova.DAL.Enums;
 
-namespace Brainova.BLL.DTOs.Response
+namespace Brainova.BLL.DTOs.Response.Report
 {
     public class ReportPdfAnswerResponse
     {

@@ -15,7 +15,7 @@ namespace Brainova.DAL.Repositories.Classes
         {
             _db = db;
         }
-
+        //SELECT * FROM ReportQuestions
         public IGenericRepository<TEntity> Repo<TEntity>() where TEntity : class
         {
             var type = typeof(TEntity);

@@ -93,7 +93,7 @@ namespace Brainova.PL.Controllers.Admin
         [HttpDelete("{userId}")]
         [Authorize(Roles = "Admin,SuperAdmin")] // Only Admin and SuperAdmin can update users
 
-
+        //ignored in postman 
         public async Task<IActionResult> DeleteUser([FromRoute] string userId)
         {
             var msg = await _userService.DeleteUserAsync(userId);

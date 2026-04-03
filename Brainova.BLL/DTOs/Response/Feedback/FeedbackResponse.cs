@@ -1,6 +1,6 @@
 ﻿using System;
 
-namespace Brainova.BLL.DTOs.Response
+namespace Brainova.BLL.DTOs.Response.Feedback
 {
     public class FeedbackResponse
     {
@@ -15,5 +15,6 @@ namespace Brainova.BLL.DTOs.Response
 
         public string Comment { get; set; } = default!;
         public DateTime CreatedAt { get; set; }
+        public bool IsSeen { get; set; }
     }
 }

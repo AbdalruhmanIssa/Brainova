@@ -1,8 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Text;
-
-namespace Brainova.BLL.DTOs.Response
+﻿namespace Brainova.BLL.DTOs.Response.Feedback
 {
     public class StudentFeedbackNotificationResponse
     {
@@ -10,12 +6,12 @@ namespace Brainova.BLL.DTOs.Response
         public Guid ReportId { get; set; }
         public Guid CaseId { get; set; }
 
+        public string SupervisorId { get; set; } = default!;
         public string? SupervisorName { get; set; }
 
+        public string Comment { get; set; } = default!;
         public DateTime CreatedAt { get; set; }
 
         public bool IsSeen { get; set; }
-
-        public string? Preview { get; set; } // short text (optional)
     }
 }

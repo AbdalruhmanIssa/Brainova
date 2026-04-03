@@ -13,7 +13,7 @@ namespace Brainova.DAL.Data
         public DbSet<Report> Reports => Set<Report>();
         public DbSet<ReportQuestion> ReportQuestions => Set<ReportQuestion>();
         public DbSet<ReportAnswer> ReportAnswers => Set<ReportAnswer>();
-      //  public DbSet<Feedback> Feedbacks => Set<Feedback>();
+        public DbSet<Feedback> Feedbacks => Set<Feedback>();
         public AppDbContext(DbContextOptions<AppDbContext> options) : base(options) { }
 
         public override int SaveChanges()

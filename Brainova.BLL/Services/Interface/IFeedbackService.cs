@@ -1,5 +1,5 @@
 ﻿using Brainova.BLL.DTOs.Request;
-using Brainova.BLL.DTOs.Response;
+using Brainova.BLL.DTOs.Response.Feedback;
 
 namespace Brainova.BLL.Services.Interface
 {
@@ -13,6 +13,19 @@ namespace Brainova.BLL.Services.Interface
 
         Task<List<FeedbackResponse>> GetBySupervisorAsync(string supervisorId);
 
-        Task<List<FeedbackResponse>> GetAllAsync();
+        Task<StudentNotificationsResult> GetAllForStudentAsync(string studentId, StudentFeedbacksQuery query,
+            CancellationToken ct = default);
+        Task<StudentNotificationsResult> GetUnseenForStudentAsync(
+              string studentId,
+              StudentFeedbacksQuery query,
+              CancellationToken ct = default);
+
+        Task MarkSeenForStudentAsync(
+            string studentId,
+            Guid feedbackId,
+            CancellationToken ct = default);
+        Task MarkAllSeenForStudentAsync(
+    string studentId,
+    CancellationToken ct = default);
     }
 }

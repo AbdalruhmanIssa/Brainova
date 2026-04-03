@@ -55,8 +55,8 @@ namespace Brainova.BLL.Services.Classes
                 throw new ForbiddenException("You are not allowed to add feedback to this report");
 
             var alreadyExists = await _uow.Repo<Feedback>()
-               .Query()
-               .AnyAsync(f => f.ReportId == reportId);
+                .Query()
+                .AnyAsync(f => f.ReportId == reportId);
 
             if (alreadyExists)
                 throw new BadRequestException("Feedback already exists for this report");
@@ -109,6 +109,7 @@ namespace Brainova.BLL.Services.Classes
         {
             var report = await _uow.Repo<Report>()
                 .Query()
+                .Include(r => r.Student)
                 .FirstOrDefaultAsync(r => r.Id == reportId);
 
             if (report is null)
@@ -151,6 +152,17 @@ namespace Brainova.BLL.Services.Classes
         {
             var data = await _uow.Repo<Feedback>()
                 .Query()
+                .FirstOrDefaultAsync(r => r.Id == reportId);
+
+            if (report is null)
+                throw new NotFoundException("Report not found");
+
+            if (report.StudentId != studentId)
+                throw new ForbiddenException("You are not allowed to view this feedback");
+
+            var feedback = await _uow.Repo<Feedback>()
+                .Query()
+                .Where(f => f.ReportId == reportId && f.StudentId == studentId)
                 .Join(
                     _uow.Repo<ApplicationUser>().Query(),
                     f => f.SupervisorId,
@@ -306,4 +318,4 @@ namespace Brainova.BLL.Services.Classes
             return "Feedback marked as seen";
         }
     }
-    }
+}

@@ -6,3 +6,4 @@
         Task<byte[]> GenerateStudentReportPdfAsync(string studentId, Guid reportId, CancellationToken ct = default);
     }
 }
+

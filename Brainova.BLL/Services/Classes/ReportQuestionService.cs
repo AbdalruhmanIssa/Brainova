@@ -38,7 +38,7 @@ namespace Brainova.BLL.Services.Classes
                 Type = req.Type,
                 Order = req.Order,
                 IsActive = req.IsActive,
-                IsRequired = req.IsRequired,
+                IsRequired= req.IsRequired,
                 OptionsJson = req.Options != null && req.Options.Any()
                     ? JsonSerializer.Serialize(req.Options.Select(x => x.Trim()).Where(x => !string.IsNullOrWhiteSpace(x)).ToList())
                     : null

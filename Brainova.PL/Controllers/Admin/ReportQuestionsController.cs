@@ -41,7 +41,7 @@ namespace Brainova.PL.Controllers.Admin
                 Type = q.Type,
                 Order = q.Order,
                 IsActive = q.IsActive,
-                IsRequired = q.IsRequired,
+                IsRequired= q.IsRequired,
                 Options = string.IsNullOrWhiteSpace(q.OptionsJson)
                     ? null
                     : System.Text.Json.JsonSerializer.Deserialize<List<string>>(q.OptionsJson)

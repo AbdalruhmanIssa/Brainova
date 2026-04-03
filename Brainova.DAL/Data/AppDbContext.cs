@@ -11,6 +11,10 @@ namespace Brainova.DAL.Data
     {
         public DbSet<MriCase> MriCases => Set<MriCase>();
         public DbSet<AiResult> AiResults => Set<AiResult>();
+        public DbSet<Report> Reports => Set<Report>();
+        public DbSet<ReportQuestion> ReportQuestions => Set<ReportQuestion>();
+        public DbSet<ReportAnswer> ReportAnswers => Set<ReportAnswer>();
+      //  public DbSet<Feedback> Feedbacks => Set<Feedback>();
         public AppDbContext(DbContextOptions<AppDbContext> options) : base(options) { }
         public DbSet<Feedback> Feedbacks { get; set; }
         public override int SaveChanges()
@@ -49,6 +53,7 @@ namespace Brainova.DAL.Data
             builder.ApplyConfiguration(new ReportConfig());
             builder.ApplyConfiguration(new ReportQuestionConfig());
             builder.ApplyConfiguration(new ReportAnswerConfig());
+         builder.ApplyConfiguration(new FeedbackConfig());
 
 
             builder.Entity<ApplicationUser>()

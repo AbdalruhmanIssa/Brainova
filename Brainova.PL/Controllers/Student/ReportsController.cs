@@ -1,8 +1,6 @@
 ﻿using Brainova.BLL.DTOs.Request;
-using Brainova.BLL.DTOs.Response;
-using Brainova.BLL.Services.Classes;
+using Brainova.BLL.DTOs.Response.Report;
 using Brainova.BLL.Services.Interface;
-using Mapster;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System.Security.Claims;

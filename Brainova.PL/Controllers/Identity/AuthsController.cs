@@ -78,15 +78,6 @@ namespace Brainova.PL.Areas.Identity.Controllers
             var message = await _authService.SetPasswordAsync(request);
             return Ok(new { message });
         }
-        [HttpGet("my-students")]
-        [Authorize(Roles = "Supervisor")]
-        public async Task<IActionResult> MyStudents()
-        {
-            var supervisorId = User.FindFirst("Id")?.Value;
-            if (string.IsNullOrWhiteSpace(supervisorId)) return Unauthorized();
-
-            var students = await _userService.GetMyStudentsAsync(supervisorId);
-            return Ok(students);
-        }
+        
     }
 }

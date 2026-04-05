@@ -1,4 +1,4 @@
-﻿namespace Brainova.BLL.DTOs.Response.Feedback
+﻿namespace Brainova.BLL.DTOs.Response
 {
     public class StudentFeedbackNotificationResponse
     {

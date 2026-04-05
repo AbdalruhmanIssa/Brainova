@@ -140,23 +140,14 @@ namespace Brainova.BLL.Services.Classes
             return report.Id;
         }
 
-        public async Task<PagedResponse<SupervisorNewReportResponse>> GetNewForSupervisorAsync(
-      string supervisorId,
-      int page,
-      int pageSize)
+        public async Task<List<SupervisorNewReportResponse>> GetNewForSupervisorAsync(string supervisorId)
         {
-            var query = _uow.Repo<Report>()
+            return await _uow.Repo<Report>()
                 .Query()
                 .Where(r =>
-                    r.Case.Student.SupervisorUserId == supervisorId &&
-                    !_uow.Repo<Feedback>().Query().Any(f => f.ReportId == r.Id))
-                .OrderByDescending(r => r.SubmittedAt);
-
-            var totalCount = await query.CountAsync();
-
-            var items = await query
-                .Skip((page - 1) * pageSize)
-                .Take(pageSize)
+                    (r.Case.Status == CaseStatus.ReportSubmitted || r.Case.Status == CaseStatus.Predicted) &&
+                    r.Case.Student.SupervisorUserId == supervisorId)
+                .OrderByDescending(r => r.SubmittedAt)
                 .Select(r => new SupervisorNewReportResponse
                 {
                     ReportId = r.Id,
@@ -166,14 +157,6 @@ namespace Brainova.BLL.Services.Classes
                     StudentName = r.Case.Student.FullName
                 })
                 .ToListAsync();
-
-            return new PagedResponse<SupervisorNewReportResponse>
-            {
-                Items = items,
-                Page = page,
-                PageSize = pageSize,
-                TotalCount = totalCount
-            };
         }
         public async Task<SupervisorReportDetailsRawResponse> GetSupervisorDetailsAsync(string supervisorId, Guid reportId)
         {

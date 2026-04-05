@@ -48,65 +48,61 @@ namespace Brainova.BLL.Services.Classes
             var entity = await _uow.Repo<MriCase>().GetByIdAsync(caseId, ct);
             return entity?.StoredFileName;
         }
-        public async Task<PagedResponse<StudentCaseDetailsResponse>>
-     GetMyCasesAsync(string studentId, StudentCasesQuery query, CancellationToken ct = default)
+        
+     public async Task<List<StudentCaseDetailsResponse>> GetMyCasesAsync(
+    string studentId,
+    CancellationToken ct = default)
         {
-            var baseQuery = _uow.Repo<MriCase>()
+            var cases = await _uow.Repo<MriCase>()
                 .Query()
                 .Where(c => c.StudentId == studentId)
-                .Include(c => c.AiResult);
+                .Include(c => c.AiResult)
+                .OrderByDescending(c => c.CreatedAt)
+                .Select(c => new
+                {
+                    Case = c,
 
-            var totalCount = await baseQuery.CountAsync(ct);
-            var cases = await baseQuery
-    .OrderByDescending(c => c.CreatedAt)
-    .Skip((query.Page - 1) * query.PageSize)
-    .Take(query.PageSize)
-    .Select(c => new
-    {
-        Case = c,
+                    Report = _uow.Repo<Report>()
+                        .Query()
+                        .Where(r => r.CaseId == c.Id && r.StudentId == studentId)
+                        .Select(r => new
+                        {
+                            r.Id,
+                            r.SubmittedAt,
 
-        Report = _uow.Repo<Report>()
-            .Query()
-            .Where(r => r.CaseId == c.Id && r.StudentId == studentId)
-            .Select(r => new
-            {
-                r.Id,
-                r.SubmittedAt,
+                            Feedback = _uow.Repo<Feedback>()
+                                .Query()
+                                .Where(f => f.ReportId == r.Id)
+                                .Select(f => new
+                                {
+                                    f.Id,
+                                    f.CreatedAt
+                                })
+                                .FirstOrDefault()
+                        })
+                        .FirstOrDefault()
+                })
+                .ToListAsync(ct);
 
-                Feedback = _uow.Repo<Feedback>()
-                    .Query()
-                    .Where(f => f.ReportId == r.Id)
-                    .Select(f => new
-                    {
-                        f.Id,
-                        f.CreatedAt   // or SubmittedAt if you named it that
-                    })
-                    .FirstOrDefault()
-            })
-            .FirstOrDefault()
-    })
-    .ToListAsync(ct);
-
-            var items = cases.Select(x => new StudentCaseDetailsResponse
+            return cases.Select(x => new StudentCaseDetailsResponse
             {
                 CaseId = x.Case.Id,
                 Status = x.Case.Status,
 
                 IsReportSubmitted =
-        x.Case.Status == CaseStatus.ReportSubmitted ||
-        x.Case.Status == CaseStatus.Predicted ||
-        x.Case.Status == CaseStatus.Reviewed,
+                    x.Case.Status == CaseStatus.ReportSubmitted ||
+                    x.Case.Status == CaseStatus.Predicted ||
+                    x.Case.Status == CaseStatus.Reviewed,
 
                 IsPredicted =
-        x.Case.Status == CaseStatus.Predicted ||
-        x.Case.Status == CaseStatus.Reviewed,
+                    x.Case.Status == CaseStatus.Predicted ||
+                    x.Case.Status == CaseStatus.Reviewed,
 
                 IsReviewed = x.Case.Status == CaseStatus.Reviewed,
 
                 ReportId = x.Report?.Id,
                 ReportSubmittedAt = x.Report?.SubmittedAt,
 
-                // ✅ Feedback
                 FeedbackId = x.Report?.Feedback?.Id,
                 FeedbackSubmittedAt = x.Report?.Feedback?.CreatedAt,
 
@@ -118,45 +114,24 @@ namespace Brainova.BLL.Services.Classes
                 ImageUrl = $"/api/Student/MriCases/image/{x.Case.StoredFileName}",
 
                 GradcamUrl = x.Case.AiResult != null
-        ? $"/api/AiTumors/gradcam-image/{x.Case.AiResult.GradcamFileName}"
-        : null
-
+                    ? $"/api/AiTumors/gradcam-image/{x.Case.AiResult.GradcamFileName}"
+                    : null
             }).ToList();
-
-            return new PagedResponse<StudentCaseDetailsResponse>
-            {
-                Page = query.Page,
-                PageSize = query.PageSize,
-                TotalCount = totalCount,
-                Items = items
-            };
         }
-        public async Task<PagedResponse<SupervisorStudentCaseDetailsResponse>> GetSupervisorCasesAsync(
-          string supervisorId,
-          SupervisorCasesQuery query,
-          CancellationToken ct = default)
+
+        public async Task<List<SupervisorStudentCaseDetailsResponse>> GetSupervisorCasesAsync(
+       string supervisorId,
+       CancellationToken ct = default)
         {
-            var baseQuery = _uow.Repo<MriCase>()
+            var cases = await _uow.Repo<MriCase>()
                 .Query()
                 .Include(c => c.Student)
                 .Include(c => c.AiResult)
-                .Where(c => c.Student.SupervisorUserId == supervisorId);
-
-            if (!string.IsNullOrWhiteSpace(query.StudentId))
-            {
-                baseQuery = baseQuery.Where(c => c.StudentId == query.StudentId);
-            }
-
-            var totalCount = await baseQuery.CountAsync(ct);
-
-            var cases = await baseQuery
+                .Where(c => c.Student.SupervisorUserId == supervisorId)
                 .OrderByDescending(c => c.CreatedAt)
-                .Skip((query.Page - 1) * query.PageSize)
-                .Take(query.PageSize)
                 .Select(c => new
                 {
                     Case = c,
-
                     Report = _uow.Repo<Report>()
                         .Query()
                         .Where(r => r.CaseId == c.Id && r.StudentId == c.StudentId)
@@ -164,25 +139,21 @@ namespace Brainova.BLL.Services.Classes
                         {
                             r.Id,
                             r.SubmittedAt,
-
-
                             Feedback = _uow.Repo<Feedback>()
                                 .Query()
-                                 .Where(f => f.ReportId == r.Id)
+                                .Where(f => f.ReportId == r.Id)
                                 .Select(f => new { f.Id, f.CreatedAt })
-                               .FirstOrDefault()
+                                .FirstOrDefault()
                         })
                         .FirstOrDefault()
                 })
                 .ToListAsync(ct);
 
-            var items = cases.Select(x => new SupervisorStudentCaseDetailsResponse
+            return cases.Select(x => new SupervisorStudentCaseDetailsResponse
             {
                 CaseId = x.Case.Id,
-
                 StudentId = x.Case.StudentId,
                 StudentName = x.Case.Student.FullName,
-
                 Status = x.Case.Status,
 
                 IsReportSubmitted =
@@ -212,16 +183,7 @@ namespace Brainova.BLL.Services.Classes
                     ? $"/api/AiTumors/gradcam-image/{x.Case.AiResult.GradcamFileName}"
                     : null
             }).ToList();
-
-            return new PagedResponse<SupervisorStudentCaseDetailsResponse>
-            {
-                Page = query.Page,
-                PageSize = query.PageSize,
-                TotalCount = totalCount,
-                Items = items
-            };
         }
-
 
     }
 }

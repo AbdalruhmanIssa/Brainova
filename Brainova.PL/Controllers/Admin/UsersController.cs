@@ -81,6 +81,7 @@ namespace Brainova.PL.Controllers.Admin
             var message = await _userService.CreateStudentAsync(request, Request);
             return Ok(new { message });
         }
+        
         [HttpGet("supervisors")]
         [AllowAnonymous]
         public async Task<IActionResult> GetSupervisors()

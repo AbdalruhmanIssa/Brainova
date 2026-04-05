@@ -16,14 +16,14 @@ namespace Brainova.PL.Controllers.Supervisor
     {
         private readonly IReportService _svc;
         private readonly IReportPdfService _reportPdfService;
-        public ReportsController(IReportService svc,IReportPdfService reportPdfService)
+        public ReportsController(IReportService svc, IReportPdfService reportPdfService)
         {
             _svc = svc;
             _reportPdfService = reportPdfService;
         }
 
         // GET: api/Supervisor/Reports/new
-  
+
         [HttpGet("new")]
         public async Task<IActionResult> GetNew(
     [FromQuery] int page = 1,

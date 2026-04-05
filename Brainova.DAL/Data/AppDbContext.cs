@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 using System.Reflection.Emit;
 
+
 namespace Brainova.DAL.Data
 {
     public class AppDbContext : IdentityDbContext<ApplicationUser>
@@ -15,7 +16,7 @@ namespace Brainova.DAL.Data
         public DbSet<ReportAnswer> ReportAnswers => Set<ReportAnswer>();
       //  public DbSet<Feedback> Feedbacks => Set<Feedback>();
         public AppDbContext(DbContextOptions<AppDbContext> options) : base(options) { }
-
+        public DbSet<Feedback> Feedbacks { get; set; }
         public override int SaveChanges()
         {
             ApplyBaseEntityRules();

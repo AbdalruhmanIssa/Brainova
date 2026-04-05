@@ -203,7 +203,8 @@ namespace Brainova.BLL.Services.Classes
             return true;
         }
 
-        public async Task<string> SetPasswordAsync(SetPasswordRequest request)
+
+    public async Task<string> SetPasswordAsync(SetPasswordRequest request)
         {
             var user = await _userManager.FindByIdAsync(request.UserId);
             if (user is null)
@@ -224,7 +225,7 @@ namespace Brainova.BLL.Services.Classes
             await _userManager.ConfirmEmailAsync(user, emailToken);
             return "Password set successfully.";
         }
-
+        
         private async Task<string> CreateTokenAsync(ApplicationUser user)
         {
             var claims = new List<Claim>

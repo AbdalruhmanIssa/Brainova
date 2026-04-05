@@ -10,11 +10,7 @@ namespace Brainova.BLL.Services.Interface
     {
         Task<Guid> SubmitAsync(string studentId, SubmitReportRequest req);
 
-
-        Task<PagedResponse<SupervisorNewReportResponse>> GetNewForSupervisorAsync(
-      string supervisorId,
-      int page,
-      int pageSize);
+        Task<List<SupervisorNewReportResponse>> GetNewForSupervisorAsync(string supervisorId);
         Task<SupervisorReportDetailsRawResponse> GetSupervisorDetailsAsync(string supervisorId, Guid reportId);
         Task<ReportPdfResponse> GetSupervisorPdfDetailsAsync(string supervisorId, Guid reportId);
         Task<ReportPdfResponse> GetStudentPdfDetailsAsync(string studentId, Guid reportId);

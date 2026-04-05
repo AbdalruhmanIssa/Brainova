@@ -1,8 +1,6 @@
 ﻿
 using Brainova.BLL.DTOs.Request;
 using Brainova.BLL.DTOs.Response;
-using Brainova.BLL.DTOs.Response.Report;
-using Brainova.BLL.Exceptions;
 using Brainova.BLL.Services.Interface;
 using Brainova.DAL.Enums;
 using Brainova.DAL.Modles;
@@ -209,7 +207,7 @@ namespace Brainova.BLL.Services.Classes
                 StoredFileName = report.Case.StoredFileName,
 
                 PredictionResult = report.Case.AiResult?.PredictionResult,
-              
+
 
                 Answers = answers.Select(a => new SupervisorReportAnswerResponse
                 {

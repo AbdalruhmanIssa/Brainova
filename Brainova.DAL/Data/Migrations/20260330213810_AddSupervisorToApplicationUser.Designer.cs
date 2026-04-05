@@ -4,6 +4,7 @@ using Brainova.DAL.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace Brainova.DAL.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260330213810_AddSupervisorToApplicationUser")]
+    partial class AddSupervisorToApplicationUser
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -117,6 +120,9 @@ namespace Brainova.DAL.Migrations
                     b.Property<string>("SecurityStamp")
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<string>("SupervisorId")
+                        .HasColumnType("nvarchar(450)");
+
                     b.Property<string>("SupervisorUserId")
                         .HasColumnType("nvarchar(450)");
 
@@ -137,6 +143,8 @@ namespace Brainova.DAL.Migrations
                         .HasDatabaseName("UserNameIndex")
                         .HasFilter("[NormalizedUserName] IS NOT NULL");
 
+                    b.HasIndex("SupervisorId");
+
                     b.HasIndex("SupervisorUserId");
 
                     b.ToTable("AspNetUsers", (string)null);
@@ -154,9 +162,6 @@ namespace Brainova.DAL.Migrations
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");
-
-                    b.Property<bool>("IsSeen")
-                        .HasColumnType("bit");
 
                     b.Property<Guid>("ReportId")
                         .HasColumnType("uniqueidentifier");
@@ -253,7 +258,17 @@ namespace Brainova.DAL.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uniqueidentifier");
 
-                    b.Property<string>("AnswerValue")
+                    b.Property<bool?>("AnswerBool")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("AnswerJson")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<decimal?>("AnswerNumber")
+                        .HasPrecision(18, 4)
+                        .HasColumnType("decimal(18,4)");
+
+                    b.Property<string>("AnswerText")
                         .HasColumnType("nvarchar(max)");
 
                     b.Property<DateTime>("CreatedAt")
@@ -301,9 +316,6 @@ namespace Brainova.DAL.Migrations
                         .HasColumnType("datetime2");
 
                     b.Property<bool>("IsActive")
-                        .HasColumnType("bit");
-
-                    b.Property<bool>("IsRequired")
                         .HasColumnType("bit");
 
                     b.Property<string>("OptionsJson")
@@ -477,10 +489,16 @@ namespace Brainova.DAL.Migrations
 
             modelBuilder.Entity("Brainova.DAL.Modles.ApplicationUser", b =>
                 {
+                    b.HasOne("Brainova.DAL.Modles.ApplicationUser", "Supervisor")
+                        .WithMany()
+                        .HasForeignKey("SupervisorId");
+
                     b.HasOne("Brainova.DAL.Modles.ApplicationUser", "SupervisorUser")
                         .WithMany("Students")
                         .HasForeignKey("SupervisorUserId")
                         .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("Supervisor");
 
                     b.Navigation("SupervisorUser");
                 });

@@ -9,6 +9,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.UI.Services;
 using Microsoft.EntityFrameworkCore;
+using Brainova.BLL.DTOs.User;
 
 namespace Brainova.BLL.Services.Classes
 {
@@ -231,6 +232,8 @@ public async Task<List<SupervisorStudentListItemResponse>> GetSupervisorStudents
             var token = await _userManager.GeneratePasswordResetTokenAsync(createdUser);
             var tokenEscaped = Uri.EscapeDataString(token);
 
+            // var link =
+            //     $"{httpRequest.Scheme}://{httpRequest.Host}/api/Identity/Auths/set-password?userId={createdUser.Id}&token={tokenEscaped}";
             var link =
     $"{httpRequest.Scheme}://{httpRequest.Host}/set-password.html?userId={createdUser.Id}&token={tokenEscaped}";
 
@@ -246,144 +249,10 @@ public async Task<List<SupervisorStudentListItemResponse>> GetSupervisorStudents
             return $"{roleName} created successfully. Set-password email sent.";
         }
 
-        //Update
-        public async Task<ChangeUserRoleResponse> ChangeUserRoleAsync(ChangeUserRoleRequest request)
+        public async Task<List<SupervisorOptionResponse>> GetSupervisorsAsync()
         {
-            var validRoles = new[] { "SuperAdmin", "Admin", "Supervisor", "Student" };
-
-            if (!validRoles.Contains(request.RoleName))
-                throw new BadRequestException("Invalid role name");
-
-            var user = await _userManager.FindByIdAsync(request.UserId);
-            if (user is null)
-                throw new NotFoundException("User not found");
-
-          //  var result = await _userRepository.ChangeUserRoleAsync(request.UserId, request.RoleName);
-            var currentRoles = await _userManager.GetRolesAsync(user);
-            var oldRole = currentRoles.FirstOrDefault();
-
-            //  SAME ROLE return OK, no email no repo call
-            if (oldRole == request.RoleName)
-            {
-                return new ChangeUserRoleResponse
-                {
-                    UserId = user.Id,
-                    FullName = user.FullName,
-                    UserName = user.UserName ?? "",
-                    Email = user.Email ?? "",
-                    OldRole = oldRole,
-                    NewRole = request.RoleName,
-                    IsChanged = false
-                };
-            }
-
-            var result = await _userRepository.ChangeUserRoleAsync(
-                request.UserId,
-                request.RoleName
-                );
-
-            if (!result.Success)
-                throw new BadRequestException(result.Message);
-
-            await _emailSender.SendEmailAsync(
-                user.Email!,
-                "Brainova - Role Updated",
-                $"<h3>Hello {user.UserName}</h3>" +
-                $"<p>Your account role has been changed.</p>" +
-                $"<p><strong>Old Role:</strong> {result.OldRole ?? "None"}</p>" +
-                $"<p><strong>New Role:</strong> {request.RoleName}</p>"
-            );
-
-            return new ChangeUserRoleResponse
-            {
-                UserId = user.Id,
-                FullName = user.FullName,
-                UserName = user.UserName ?? "",
-                Email = user.Email ?? "",
-                OldRole = result.OldRole,
-                NewRole = request.RoleName,
-                IsChanged = true
-            };
-        }
-        public async Task<UpdateUserResponse> UpdateUserAsync(string userId, UpdateUserRequest request)
-        {
-            var user = await _userManager.FindByIdAsync(userId);
-            if (user is null)
-                throw new NotFoundException("User not found");
-
-            var currentUserId = _httpContextAccessor.HttpContext?.User.FindFirst("Id")?.Value;
-            var isSelfUpdate = currentUserId == userId;
-
-            if (!isSelfUpdate)
-            {
-                var currentUser = await _userManager.FindByIdAsync(currentUserId!);
-                if (currentUser is null)
-                    throw new UnauthorizedAccessException("Unauthorized");
-
-                var currentUserRoles = await _userManager.GetRolesAsync(currentUser);
-
-                if (!currentUserRoles.Contains("Admin") && !currentUserRoles.Contains("SuperAdmin"))
-                    throw new ForbiddenException("You are not allowed to update other users");
-            }
-
-            var userRoles = await _userManager.GetRolesAsync(user);
-            var isStudent = userRoles.Contains("Student");
-
-            if (!string.Equals(user.Email, request.Email, StringComparison.OrdinalIgnoreCase))
-            {
-                var existingByEmail = await _userManager.FindByEmailAsync(request.Email);
-                if (existingByEmail != null && existingByEmail.Id != userId)
-                    throw new BadRequestException("Email already exists");
-            }
-
-            if (!string.Equals(user.UserName, request.UserName, StringComparison.OrdinalIgnoreCase))
-            {
-                var existingByUserName = await _userManager.FindByNameAsync(request.UserName);
-                if (existingByUserName != null && existingByUserName.Id != userId)
-                    throw new BadRequestException("Username already exists");
-            }
-
-            ApplicationUser? newSupervisor = null;
-
-            if (isStudent)
-            {
-                if (string.IsNullOrWhiteSpace(request.SupervisorUserId))
-                    throw new BadRequestException("Student must have a supervisor");
-
-                newSupervisor = await _userManager.FindByIdAsync(request.SupervisorUserId);
-                if (newSupervisor is null)
-                    throw new NotFoundException("Supervisor not found");
-
-                var supervisorRoles = await _userManager.GetRolesAsync(newSupervisor);
-                if (!supervisorRoles.Contains("Supervisor"))
-                    throw new BadRequestException("Target supervisor user is not a Supervisor");
-            }
-            else
-            {
-                if (!string.IsNullOrWhiteSpace(request.SupervisorUserId))
-                    throw new BadRequestException("Supervisor can only be assigned to students");
-            }
-
-            var oldEmail = user.Email ?? string.Empty;
-            var changes = new List<string>();
-
-            bool TrackChange(string fieldName, string? oldValue, string? newValue, Action applyChange)
-            {
-                var oldNormalized = oldValue?.Trim() ?? string.Empty;
-                var newNormalized = newValue?.Trim() ?? string.Empty;
-
-                if (string.Equals(oldNormalized, newNormalized, StringComparison.Ordinal))
-                    return false;
-
-                changes.Add($"{fieldName} changed from: {oldValue ?? "(empty)"} to: {newValue ?? "(empty)"}");
-                applyChange();
-                return true;
-            }
-
-            TrackChange("Full Name", user.FullName, request.FullName, () =>
-            {
-                user.FullName = request.FullName;
-            });
+            var users = await _userRepository.GetSupervisorsAsync();
+            var result = new List<SupervisorOptionResponse>();
 
             TrackChange("Email", user.Email, request.Email, () =>
             {

@@ -7,29 +7,40 @@ namespace Brainova.PL.Controllers.Supervisor
 {
     [ApiController]
     [Area("Supervisor")]
-    [Route("api/[area]/Reports/{reportId:guid}/[controller]")]
+    [Route("api/[area]/[controller]")]
     [Authorize(Roles = "Supervisor")]
-    public class FeedbacksController : ControllerBase
+    public class ManageFeedbacksController : ControllerBase
     {
         private readonly IFeedbackService _service;
 
-        public FeedbacksController(IFeedbackService service)
+        public ManageFeedbacksController(IFeedbackService service)
         {
             _service = service;
         }
 
-        [HttpPost]
-        public async Task<IActionResult> Add(Guid reportId, [FromBody] CreateFeedbackRequest request)
+        [HttpPut("{feedbackId:guid}")]
+        public async Task<IActionResult> Update(Guid feedbackId, [FromBody] UpdateFeedbackRequest request)
         {
-            try
-            {
             var supervisorId = User.FindFirst("Id")?.Value;
             if (string.IsNullOrWhiteSpace(supervisorId))
                 return Unauthorized();
 
-            var message = await _service.AddAsync(supervisorId, reportId, request);
+            var message = await _service.UpdateAsync(supervisorId, feedbackId, request);
             return Ok(new { message });
         }
+
+        [HttpDelete("{feedbackId:guid}")]
+        public async Task<IActionResult> Delete(Guid feedbackId)
+        {
+            try
+            {
+                var supervisorId = User.FindFirst("Id")?.Value;
+                if (string.IsNullOrWhiteSpace(supervisorId))
+                    return Unauthorized();
+
+                var message = await _service.DeleteAsync(supervisorId, feedbackId);
+                return Ok(new { message });
+            }
             catch (Exception ex)
             {
                 return StatusCode(500, new
@@ -40,17 +51,5 @@ namespace Brainova.PL.Controllers.Supervisor
                 });
             }
         }
-
-        [HttpGet]
-        public async Task<IActionResult> GetByReportId(Guid reportId)
-        {
-            var supervisorId = User.FindFirst("Id")?.Value;
-            if (string.IsNullOrWhiteSpace(supervisorId))
-                return Unauthorized();
-
-            var data = await _service.GetForSupervisorAsync(supervisorId, reportId);
-            return Ok(data);
-        }
-    
     }
-}
+    }

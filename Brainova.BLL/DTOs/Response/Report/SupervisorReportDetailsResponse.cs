@@ -19,7 +19,7 @@ namespace Brainova.BLL.DTOs.Response.Report
 
         // AI (no gradcam)
         public string? PredictionResult { get; set; }
-      
+
 
         public List<SupervisorReportAnswerResponse> Answers { get; set; } = new();
     }

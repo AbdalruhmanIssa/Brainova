@@ -53,7 +53,11 @@ builder.Services.AddScoped<IFeedbackService, FeedbackService>();
 
 // 2) HttpClient for Python (named client)
 builder.Services.AddScoped<IAiTumorService, AiTumorService>();
+builder.Services.AddScoped<IFeedbackService, FeedbackService>();
 
+builder.Services.AddScoped<IReportQuestionService, ReportQuestionService>(); builder.Services.AddScoped<IReportQuestionService, ReportQuestionService>();
+builder.Services.AddScoped<IReportService, ReportService>(); builder.Services.AddScoped<IReportService, ReportService>();
+builder.Services.AddScoped<IReportPdfService, ReportPdfService>(); builder.Services.AddScoped<IReportPdfService, ReportPdfService>();
 builder.Services.AddHttpClient("GradCamClient", client =>
 {
     client.BaseAddress = new Uri("https://brainova-ai-1031567223264.europe-west1.run.app/");

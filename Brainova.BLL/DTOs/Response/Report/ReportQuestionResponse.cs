@@ -1,4 +1,7 @@
 ﻿using Brainova.DAL.Enums;
+using System;
+using System.Collections.Generic;
+using System.Text;
 
 namespace Brainova.BLL.DTOs.Response.Report
 {

@@ -1,11 +1,13 @@
 ﻿using System;
 
-namespace Brainova.BLL.DTOs.Response.Feedback
+namespace Brainova.BLL.DTOs.Response
 {
     public class FeedbackResponse
     {
         public Guid Id { get; set; }
         public Guid ReportId { get; set; }
+        public DateTime ReportCreatedAt { get; set; }
+        public string? PredictionResult { get; set; }
 
         public string SupervisorId { get; set; } = default!;
         public string? SupervisorName { get; set; }

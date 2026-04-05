@@ -1,5 +1,5 @@
 ﻿using Brainova.BLL.DTOs.Request;
-using Brainova.BLL.DTOs.Response.Feedback;
+using Brainova.BLL.DTOs.Response;
 using Brainova.BLL.Exceptions;
 using Brainova.BLL.Services.Interface;
 using Brainova.DAL.Enums;
@@ -228,20 +228,11 @@ namespace Brainova.BLL.Services.Classes
 
             return feedbacks;
         }
-
-        public async Task<StudentNotificationsResult> GetAllForStudentAsync(
-    string studentId,
-    StudentFeedbacksQuery query,
-    CancellationToken ct = default)
+        public async Task<(int TotalCount, int UnseenCount, List<StudentFeedbackNotificationResponse> Items)>
+GetAllForStudentAsync(string studentId, CancellationToken ct = default)
         {
             if (string.IsNullOrWhiteSpace(studentId))
                 throw new UnauthorizedException("Student is not authenticated");
-
-            if (query.Page <= 0)
-                query.Page = 1;
-
-            if (query.PageSize <= 0)
-                query.PageSize = 10;
 
             var baseQuery = _uow.Repo<Feedback>()
                 .Query()
@@ -266,41 +257,27 @@ namespace Brainova.BLL.Services.Classes
                         FeedbackId = x.f.Id,
                         ReportId = x.f.ReportId,
                         CaseId = x.r.CaseId,
+
                         SupervisorId = x.f.SupervisorId,
                         SupervisorName = sup.FullName,
+
                         Comment = x.f.Comment,
                         CreatedAt = x.f.CreatedAt,
                         IsSeen = x.f.IsSeen
                     }
                 )
-                .OrderBy(x => x.IsSeen)
-                .ThenByDescending(x => x.CreatedAt)
-                .Skip((query.Page - 1) * query.PageSize)
-                .Take(query.PageSize)
+                .OrderBy(x => x.IsSeen)                // unseen first
+                .ThenByDescending(x => x.CreatedAt)   // newest first
                 .ToListAsync(ct);
 
-            return new StudentNotificationsResult
-            {
-                Page = query.Page,
-                PageSize = query.PageSize,
-                TotalCount = totalCount,
-                UnseenCount = unseenCount,
-                Items = items
-            };
+            return (totalCount, unseenCount, items);
         }
-        public async Task<StudentNotificationsResult> GetUnseenForStudentAsync(
-    string studentId,
-    StudentFeedbacksQuery query,
-    CancellationToken ct = default)
+
+        public async Task<(int TotalCount, List<StudentFeedbackNotificationResponse> Items)>
+GetUnseenForStudentAsync(string studentId, CancellationToken ct = default)
         {
             if (string.IsNullOrWhiteSpace(studentId))
                 throw new UnauthorizedException("Student is not authenticated");
-
-            if (query.Page <= 0)
-                query.Page = 1;
-
-            if (query.PageSize <= 0)
-                query.PageSize = 10;
 
             var unseenBaseQuery = _uow.Repo<Feedback>()
                 .Query()
@@ -324,27 +301,22 @@ namespace Brainova.BLL.Services.Classes
                         FeedbackId = x.f.Id,
                         ReportId = x.f.ReportId,
                         CaseId = x.r.CaseId,
+
                         SupervisorId = x.f.SupervisorId,
                         SupervisorName = sup.FullName,
+
                         Comment = x.f.Comment,
                         CreatedAt = x.f.CreatedAt,
                         IsSeen = x.f.IsSeen
                     }
                 )
                 .OrderByDescending(x => x.CreatedAt)
-                .Skip((query.Page - 1) * query.PageSize)
-                .Take(query.PageSize)
                 .ToListAsync(ct);
 
-            return new StudentNotificationsResult
-            {
-                Page = query.Page,
-                PageSize = query.PageSize,
-                TotalCount = totalCount,
-                UnseenCount = totalCount,
-                Items = items
-            };
+            return (totalCount, items);
         }
+
+
 
         public async Task MarkSeenForStudentAsync(
             string studentId,
@@ -383,6 +355,158 @@ namespace Brainova.BLL.Services.Classes
 
             await _uow.SaveChangesAsync(ct);
         }
+        public async Task<(int TotalCount, List<FeedbackResponse> Items)> GetAllForSupervisorAsync(
+    string supervisorId,
+    CancellationToken ct = default)
+        {
+            if (string.IsNullOrWhiteSpace(supervisorId))
+                throw new UnauthorizedException("Supervisor is not authenticated");
+
+            var baseQuery = _uow.Repo<Feedback>()
+                .Query()
+                .Where(f => f.SupervisorId == supervisorId);
+
+            var totalCount = await baseQuery.CountAsync(ct);
+
+            var items = await baseQuery
+                .Join(
+                    _uow.Repo<Report>().Query(),
+                    f => f.ReportId,
+                    r => r.Id,
+                    (f, r) => new { f, r }
+                )
+                .Join(
+                    _uow.Repo<ApplicationUser>().Query(),
+                    x => x.f.SupervisorId,
+                    sup => sup.Id,
+                    (x, sup) => new { x.f, x.r, sup }
+                )
+                .Join(
+                    _uow.Repo<ApplicationUser>().Query(),
+                    x => x.f.StudentId,
+                    stu => stu.Id,
+                    (x, stu) => new FeedbackResponse
+                    {
+                        Id = x.f.Id,
+                        ReportId = x.f.ReportId,
+
+                        SupervisorId = x.f.SupervisorId,
+                        SupervisorName = x.sup.FullName,
+
+                        StudentId = x.f.StudentId,
+                        StudentName = stu.FullName,
+
+                        Comment = x.f.Comment,
+                        CreatedAt = x.f.CreatedAt,
+                        IsSeen = x.f.IsSeen,
+
+                        ReportCreatedAt = x.r.SubmittedAt,
+                        PredictionResult = x.r.Case.AiResult != null
+                            ? x.r.Case.AiResult.PredictionResult
+                            : null
+                    }
+                )
+                .OrderByDescending(x => x.CreatedAt)
+                .ToListAsync(ct);
+
+            return (totalCount, items);
+        }
+        public async Task<FeedbackResponse> UpdateAsync(
+    string supervisorId,
+    Guid feedbackId,
+    UpdateFeedbackRequest request,
+    CancellationToken ct = default)
+        {
+            if (string.IsNullOrWhiteSpace(supervisorId))
+                throw new UnauthorizedException("Supervisor is not authenticated");
+
+            var feedback = await _uow.Repo<Feedback>()
+                .Query()
+                .FirstOrDefaultAsync(f => f.Id == feedbackId, ct);
+
+            if (feedback is null)
+                throw new NotFoundException("Feedback not found");
+
+            if (feedback.SupervisorId != supervisorId)
+                throw new ForbiddenException("You are not allowed to update this feedback");
+
+            feedback.Comment = request.Comment.Trim();
+            feedback.IsSeen = false;
+
+            _uow.Repo<Feedback>().Update(feedback);
+            await _uow.SaveChangesAsync(ct);
+
+            var updated = await _uow.Repo<Feedback>()
+                .Query()
+                .Where(f => f.Id == feedbackId)
+                .Join(
+                    _uow.Repo<ApplicationUser>().Query(),
+                    f => f.SupervisorId,
+                    sup => sup.Id,
+                    (f, sup) => new { f, sup }
+                )
+                .Join(
+                    _uow.Repo<ApplicationUser>().Query(),
+                    x => x.f.StudentId,
+                    stu => stu.Id,
+                    (x, stu) => new FeedbackResponse
+                    {
+                        Id = x.f.Id,
+                        ReportId = x.f.ReportId,
+
+                        SupervisorId = x.f.SupervisorId,
+                        SupervisorName = x.sup.FullName,
+
+                        StudentId = x.f.StudentId,
+                        StudentName = stu.FullName,
+
+                        Comment = x.f.Comment,
+                        CreatedAt = x.f.CreatedAt
+                    }
+                )
+                .FirstOrDefaultAsync(ct);
+
+            if (updated is null)
+                throw new NotFoundException("Feedback not found");
+
+            return updated;
+        }
+        public async Task<string> DeleteAsync(
+    string supervisorId,
+    Guid feedbackId,
+    CancellationToken ct = default)
+        {
+            if (string.IsNullOrWhiteSpace(supervisorId))
+                throw new UnauthorizedException("Supervisor is not authenticated");
+
+            var feedback = await _uow.Repo<Feedback>()
+                .Query()
+                .FirstOrDefaultAsync(f => f.Id == feedbackId, ct);
+
+            if (feedback is null)
+                throw new NotFoundException("Feedback not found");
+
+            if (feedback.SupervisorId != supervisorId)
+                throw new ForbiddenException("You are not allowed to delete this feedback");
+
+            var report = await _uow.Repo<Report>()
+                .Query()
+                .Include(r => r.Case)
+                .FirstOrDefaultAsync(r => r.Id == feedback.ReportId, ct);
+
+            if (report is null)
+                throw new NotFoundException("Related report not found");
+
+            _uow.Repo<Feedback>().Remove(feedback);
+
+            report.Case.Status = CaseStatus.Predicted;
+            _uow.Repo<MriCase>().Update(report.Case);
+
+            await _uow.SaveChangesAsync(ct);
+
+            return "Feedback deleted successfully";
+        }
+
 
     }
 

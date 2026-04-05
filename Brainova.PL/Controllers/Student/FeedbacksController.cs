@@ -1,4 +1,4 @@
-﻿using Brainova.BLL.DTOs.Response.Feedback;
+﻿using Brainova.BLL.DTOs.Response;
 using Brainova.BLL.Services.Interface;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -29,27 +29,37 @@ namespace Brainova.PL.Controllers.Student
             var data = await _service.GetForStudentAsync(studentId, reportId);
             return Ok(data);
         }
-
         [HttpGet]
-        public async Task<IActionResult> GetAll([FromQuery] StudentFeedbacksQuery query, CancellationToken ct)
+        public async Task<IActionResult> GetAll(CancellationToken ct)
         {
             var studentId = User.FindFirst("Id")?.Value;
             if (string.IsNullOrWhiteSpace(studentId))
                 return Unauthorized();
 
-            var data = await _service.GetAllForStudentAsync(studentId, query, ct);
-            return Ok(data);
+            var (total, unseen, items) = await _service.GetAllForStudentAsync(studentId, ct);
+
+            return Ok(new
+            {
+                TotalCount = total,
+                UnseenCount = unseen,
+                Items = items
+            });
         }
-
         [HttpGet("unseen")]
-        public async Task<IActionResult> GetUnseen([FromQuery] StudentFeedbacksQuery query, CancellationToken ct)
+        public async Task<IActionResult> GetUnseen(CancellationToken ct)
         {
             var studentId = User.FindFirst("Id")?.Value;
             if (string.IsNullOrWhiteSpace(studentId))
                 return Unauthorized();
 
-            var data = await _service.GetUnseenForStudentAsync(studentId, query, ct);
-            return Ok(data);
+            var (total, items) = await _service.GetUnseenForStudentAsync(studentId, ct);
+
+            return Ok(new
+            {
+                TotalCount = total,
+               
+                Items = items
+            });
         }
 
         // POST: /api/Student/Feedbacks/{feedbackId}/mark-seen

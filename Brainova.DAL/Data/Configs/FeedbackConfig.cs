@@ -37,7 +37,6 @@ namespace Brainova.DAL.Data.Configs
                 .WithMany()
                 .HasForeignKey(x => x.StudentId)
                 .OnDelete(DeleteBehavior.Restrict);
-            b.HasIndex(x => x.ReportId).IsUnique();
 
             b.HasIndex(x => x.ReportId).IsUnique();
         }

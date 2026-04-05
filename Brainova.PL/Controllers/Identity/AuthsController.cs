@@ -52,17 +52,6 @@ namespace Brainova.PL.Areas.Identity.Controllers
             return Ok(new { success });
         }
 
-        [HttpGet("{userId}")]
-        public async Task<IActionResult> GetById([FromRoute] string userId)
-        {
-            var user = await _userService.GetByIdAsync(userId);
-
-            if (user == null)
-                return NotFound(new { message = "User not found" });
-
-            return Ok(user);
-        }
-
         // 🔄 Reset Password (code flow)
         [HttpPost("reset-password")]
         public async Task<IActionResult> ResetPassword(ResetPasswordRequest request)

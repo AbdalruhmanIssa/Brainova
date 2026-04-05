@@ -42,6 +42,7 @@ namespace Brainova.BLL.Services.Classes
 
             return mriCase.Adapt<MriUploadResponse>();
         }
+
         public async Task<string?> GetStoredFileNameAsync(Guid caseId, CancellationToken ct = default)
         {
             var entity = await _uow.Repo<MriCase>().GetByIdAsync(caseId, ct);

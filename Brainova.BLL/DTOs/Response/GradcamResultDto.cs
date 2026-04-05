@@ -11,8 +11,8 @@ namespace Brainova.BLL.DTOs.Response
         public string Label { get; set; } = "";
         public float[] Probabilities { get; set; } = Array.Empty<float>();
         [JsonIgnore]
-        public string FileName { get; set; } = "";  
-        public string GradcamUrl { get; set; } = ""; 
+        public string FileName { get; set; } = "";   // ✅ add this
+        public string GradcamUrl { get; set; } = ""; // ✅ controller will fill it
     }
 }
 

@@ -21,24 +21,12 @@ namespace Brainova.PL.Controllers.Supervisor
         [HttpPost]
         public async Task<IActionResult> Add(Guid reportId, [FromBody] CreateFeedbackRequest request)
         {
-            try
-            {
             var supervisorId = User.FindFirst("Id")?.Value;
             if (string.IsNullOrWhiteSpace(supervisorId))
                 return Unauthorized();
 
             var message = await _service.AddAsync(supervisorId, reportId, request);
             return Ok(new { message });
-        }
-            catch (Exception ex)
-            {
-                return StatusCode(500, new
-                {
-                    success = false,
-                    message = ex.Message,
-                    inner = ex.InnerException?.Message
-                });
-            }
         }
 
         [HttpGet]
@@ -51,6 +39,5 @@ namespace Brainova.PL.Controllers.Supervisor
             var data = await _service.GetForSupervisorAsync(supervisorId, reportId);
             return Ok(data);
         }
-    
     }
 }

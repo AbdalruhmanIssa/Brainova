@@ -1,6 +1,6 @@
 ﻿
 using Brainova.BLL.DTOs.Request;
-using Brainova.BLL.DTOs.Response;
+using Brainova.BLL.DTOs.Response.Report;
 using Brainova.BLL.Services.Interface;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;

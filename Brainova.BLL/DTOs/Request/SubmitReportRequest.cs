@@ -13,5 +13,5 @@ namespace Brainova.BLL.DTOs.Request
         public List<SubmitReportAnswerItem> Answers { get; set; } = new();
     }
 
-
+    
 }

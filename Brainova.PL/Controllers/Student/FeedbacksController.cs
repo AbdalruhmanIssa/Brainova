@@ -27,15 +27,5 @@ namespace Brainova.PL.Controllers.Student
             var data = await _service.GetForStudentAsync(studentId, reportId);
             return Ok(data);
         }
-        [HttpGet("unseen")]
-        public async Task<IActionResult> GetUnseen()
-        {
-            var studentId = User.FindFirst("Id")?.Value;
-            if (string.IsNullOrWhiteSpace(studentId))
-                return Unauthorized();
-
-            var data = await _service.GetUnseenForStudentAsync(studentId);
-            return Ok(data);
-        }
     }
 }

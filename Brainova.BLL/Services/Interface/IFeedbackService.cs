@@ -1,5 +1,6 @@
 ﻿using Brainova.BLL.DTOs.Request;
 using Brainova.BLL.DTOs.Response;
+using Brainova.BLL.DTOs.Response.Feedback;
 
 namespace Brainova.BLL.Services.Interface
 {
@@ -32,6 +33,8 @@ namespace Brainova.BLL.Services.Interface
         Task<(int TotalCount, List<FeedbackResponse> Items)> GetAllForSupervisorAsync(
     string supervisorId,
     CancellationToken ct = default);
+        Task<(int TotalCount, List<AdminFeedbackResponse> Items)>
+    GetAdminFeedbacksAsync(CancellationToken ct = default);
 
 
     }

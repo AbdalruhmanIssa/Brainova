@@ -184,6 +184,80 @@ namespace Brainova.BLL.Services.Classes
                     : null
             }).ToList();
         }
+        public async Task<List<AdminCaseDetailsResponse>> GetAdminCasesAsync(CancellationToken ct = default)
+        {
+            var cases = await _uow.Repo<MriCase>()
+                .Query()
+                .Include(c => c.Student)
+                .ThenInclude(s => s.SupervisorUser)
+                .Include(c => c.AiResult)
+                .OrderByDescending(c => c.CreatedAt)
+                .Select(c => new
+                {
+                    Case = c,
+
+                    Report = _uow.Repo<Report>()
+                        .Query()
+                        .Where(r => r.CaseId == c.Id && r.StudentId == c.StudentId)
+                        .Select(r => new
+                        {
+                            r.Id,
+                            r.SubmittedAt,
+
+                            Feedback = _uow.Repo<Feedback>()
+                                .Query()
+                                .Where(f => f.ReportId == r.Id)
+                                .Select(f => new
+                                {
+                                    f.Id,
+                                    f.CreatedAt
+                                })
+                                .FirstOrDefault()
+                        })
+                        .FirstOrDefault()
+                })
+                .ToListAsync(ct);
+
+            return cases.Select(x => new AdminCaseDetailsResponse
+            {
+                CaseId = x.Case.Id,
+
+                StudentId = x.Case.StudentId,
+                StudentName = x.Case.Student.FullName,
+
+                SupervisorId = x.Case.Student.SupervisorUserId,
+                SupervisorName = x.Case.Student.SupervisorUser?.FullName,
+
+                Status = x.Case.Status,
+
+                IsReportSubmitted =
+                    x.Case.Status == CaseStatus.ReportSubmitted ||
+                    x.Case.Status == CaseStatus.Predicted ||
+                    x.Case.Status == CaseStatus.Reviewed,
+
+                IsPredicted =
+                    x.Case.Status == CaseStatus.Predicted ||
+                    x.Case.Status == CaseStatus.Reviewed,
+
+                IsReviewed = x.Case.Status == CaseStatus.Reviewed,
+
+                ReportId = x.Report?.Id,
+                ReportSubmittedAt = x.Report?.SubmittedAt,
+
+                FeedbackId = x.Report?.Feedback?.Id,
+                FeedbackSubmittedAt = x.Report?.Feedback?.CreatedAt,
+
+                PredictionResult = x.Case.AiResult?.PredictionResult,
+                PredictionCreatedAt = x.Case.AiResult?.CreatedAt,
+
+                CaseCreatedAt = x.Case.CreatedAt,
+
+                ImageUrl = $"/api/Student/MriCases/image/{x.Case.StoredFileName}",
+                GradcamUrl = x.Case.AiResult != null
+                    ? $"/api/AiTumors/gradcam-image/{x.Case.AiResult.GradcamFileName}"
+                    : null
+            }).ToList();
+        }
 
     }
 }

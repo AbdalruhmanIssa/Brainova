@@ -6,6 +6,7 @@ using Brainova.DAL.Repositories.Interface;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.EntityFrameworkCore;
 using System.Text.Json;
+using Brainova.BLL.Exceptions;
 namespace Brainova.BLL.Services.Classes
 {
     public class AiResultService : IAiResultService

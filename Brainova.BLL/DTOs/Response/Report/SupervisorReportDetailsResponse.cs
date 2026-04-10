@@ -11,6 +11,7 @@ namespace Brainova.BLL.DTOs.Response.Report
 
         public string StudentId { get; set; } = default!;
         public string? StudentName { get; set; }
+        public string? StudentEmail { get; set; } = default!;
 
         public DateTime SubmittedAt { get; set; }
 
@@ -19,7 +20,8 @@ namespace Brainova.BLL.DTOs.Response.Report
 
         // AI (no gradcam)
         public string? PredictionResult { get; set; }
-      
+        public List<ProbabilityItemResponse> Probabilities { get; set; }
+
 
         public List<SupervisorReportAnswerResponse> Answers { get; set; } = new();
     }

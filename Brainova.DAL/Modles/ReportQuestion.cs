@@ -14,5 +14,7 @@ namespace Brainova.DAL.Modles
 
         // For choices: JSON array string e.g. ["Glioma","Meningioma"]
         public string? OptionsJson { get; set; }
+        public string SupervisorId { get; set; } = default!;
+        public ApplicationUser Supervisor { get; set; } = default!;
     }
 }

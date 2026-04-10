@@ -27,17 +27,19 @@ namespace Brainovaز.PL.Middlewares
                     message = ex.Message
                 });
             }
-            catch (Exception)
+            catch (Exception ex)
             {
                 context.Response.StatusCode = 500;
                 context.Response.ContentType = "application/json";
                 await context.Response.WriteAsJsonAsync(new
                 {
                     success = false,
-                    message = "Unexpected server error."
+                    message = ex.Message,
+                    detail = ex.InnerException?.Message
                 });
             }
         }
+        }
     }
 
-}
+

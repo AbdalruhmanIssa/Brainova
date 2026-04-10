@@ -24,11 +24,14 @@ namespace Brainova.PL.Controllers.Student
             _reportPdfService = reportPdfService;
         }
 
-        // GET: api/Student/Reports/questions
         [HttpGet("questions")]
         public async Task<IActionResult> GetQuestions()
         {
-            var questions = await _qSvc.GetActiveAsync();
+            var studentId = User.FindFirst("Id")?.Value;
+            if (string.IsNullOrWhiteSpace(studentId))
+                return Unauthorized();
+
+            var questions = await _qSvc.GetActiveForStudentAsync(studentId);
 
             var dto = questions.Select(q => new ReportQuestionResponse
             {

@@ -19,13 +19,13 @@ namespace Brainova.PL.Controllers.Supervisor
         }
 
         [HttpGet]
-        public async Task<IActionResult> GetMyStudentsCases(CancellationToken ct)
+        public async Task<IActionResult> GetMyStudentsCases([FromQuery] string? studentId,CancellationToken ct)
         {
             var supervisorId = User.FindFirst("Id")?.Value;
             if (string.IsNullOrWhiteSpace(supervisorId))
                 return Unauthorized();
 
-            var cases = await _service.GetSupervisorCasesAsync(supervisorId, ct);
+            var cases = await _service.GetSupervisorCasesAsync(supervisorId, studentId, ct);
 
             foreach (var item in cases)
             {

@@ -120,14 +120,22 @@ namespace Brainova.BLL.Services.Classes
         }
 
         public async Task<List<SupervisorStudentCaseDetailsResponse>> GetSupervisorCasesAsync(
-       string supervisorId,
-       CancellationToken ct = default)
+        string supervisorId,
+        string? studentId = null,
+        CancellationToken ct = default)
         {
-            var cases = await _uow.Repo<MriCase>()
+            var query = _uow.Repo<MriCase>()
                 .Query()
                 .Include(c => c.Student)
                 .Include(c => c.AiResult)
-                .Where(c => c.Student.SupervisorUserId == supervisorId)
+                .Where(c => c.Student.SupervisorUserId == supervisorId);
+
+            if (!string.IsNullOrWhiteSpace(studentId))
+            {
+                query = query.Where(c => c.StudentId == studentId);
+            }
+
+            var cases = await query
                 .OrderByDescending(c => c.CreatedAt)
                 .Select(c => new
                 {
@@ -154,6 +162,7 @@ namespace Brainova.BLL.Services.Classes
                 CaseId = x.Case.Id,
                 StudentId = x.Case.StudentId,
                 StudentName = x.Case.Student.FullName,
+                StudentEmail = x.Case.Student.Email,
                 Status = x.Case.Status,
 
                 IsReportSubmitted =

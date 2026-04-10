@@ -46,8 +46,18 @@ namespace Brainova.BLL.Services.Classes
             if (reportExists)
                 throw new BadRequestException("Report already exists for this case");
 
+            var student = await _uow.Repo<ApplicationUser>()
+    .Query()
+    .FirstOrDefaultAsync(u => u.Id == studentId);
+
+            if (student == null)
+                throw new NotFoundException("Student not found");
+
+            if (string.IsNullOrWhiteSpace(student.SupervisorUserId))
+                throw new BadRequestException("Student has no assigned supervisor");
+
             var questions = await questionRepo.Query()
-                .Where(q => q.IsActive)
+                .Where(q => q.IsActive && q.SupervisorId == student.SupervisorUserId)
                 .OrderBy(q => q.Order)
                 .ToListAsync();
 
@@ -181,19 +191,41 @@ namespace Brainova.BLL.Services.Classes
                 .OrderBy(a => a.Question.Order)
                 .ToListAsync();
 
+            var probabilities = new List<ProbabilityItemResponse>();
+
+            if (!string.IsNullOrWhiteSpace(report.Case.AiResult?.ProbabilitiesJson))
+            {
+                try
+                {
+                    var arr = JsonSerializer.Deserialize<float[]>(report.Case.AiResult.ProbabilitiesJson);
+
+                    if (arr != null && arr.Length >= 4)
+                    {
+                        probabilities = new List<ProbabilityItemResponse>
+                {
+                    new ProbabilityItemResponse { Label = "Glioma", Value = arr[0] },
+                    new ProbabilityItemResponse { Label = "Meningioma", Value = arr[1] },
+                    new ProbabilityItemResponse { Label = "No Tumor", Value = arr[2] },
+                    new ProbabilityItemResponse { Label = "Pituitary", Value = arr[3] }
+                };
+                    }
+                }
+                catch
+                {
+                }
+            }
+
             var dto = new SupervisorReportDetailsRawResponse
             {
                 ReportId = report.Id,
                 CaseId = report.CaseId,
                 StudentId = report.Case.StudentId,
                 StudentName = report.Case.Student.FullName,
-                SubmittedAt = report.CreatedAt,
-
+                StudentEmail = report.Case.Student.Email,
+                SubmittedAt = report.SubmittedAt,
                 StoredFileName = report.Case.StoredFileName,
-
                 PredictionResult = report.Case.AiResult?.PredictionResult,
-              
-
+                Probabilities = probabilities,
                 Answers = answers.Select(a => new SupervisorReportAnswerResponse
                 {
                     QuestionId = a.QuestionId,
@@ -206,6 +238,7 @@ namespace Brainova.BLL.Services.Classes
 
             return dto;
         }
+
         public async Task<ReportPdfResponse> GetSupervisorPdfDetailsAsync(string supervisorId, Guid reportId)
         {
             var report = await _uow.Repo<Report>()

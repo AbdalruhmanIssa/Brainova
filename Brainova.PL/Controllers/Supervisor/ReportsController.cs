@@ -67,8 +67,10 @@ namespace Brainova.PL.Controllers.Supervisor
                 CaseId = raw.CaseId,
                 StudentId = raw.StudentId,
                 StudentName = raw.StudentName,
+                StudentEmail = raw.StudentEmail,
                 SubmittedAt = raw.SubmittedAt,
                 PredictionResult = raw.PredictionResult,
+                Probabilities = raw.Probabilities,
                 MriImageUrl = imageUrl,
                 Answers = raw.Answers
             };

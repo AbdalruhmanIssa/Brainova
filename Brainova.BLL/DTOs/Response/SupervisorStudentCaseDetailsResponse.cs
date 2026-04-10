@@ -11,6 +11,7 @@ namespace Brainova.BLL.DTOs.Response
 
         public string StudentId { get; set; } = default!;
         public string? StudentName { get; set; }
+        public string? StudentEmail { get; set; }
 
         public CaseStatus Status { get; set; }
 

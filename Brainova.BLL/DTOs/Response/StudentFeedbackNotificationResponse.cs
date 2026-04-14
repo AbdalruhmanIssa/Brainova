@@ -4,6 +4,7 @@
     {
         public Guid FeedbackId { get; set; }
         public Guid ReportId { get; set; }
+                public string? ReportCode { get; set; }
         public Guid CaseId { get; set; }
 
         public string SupervisorId { get; set; } = default!;

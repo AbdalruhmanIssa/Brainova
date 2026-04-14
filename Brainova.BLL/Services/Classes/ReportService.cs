@@ -8,6 +8,7 @@ using Brainova.DAL.Enums;
 using Brainova.DAL.Modles;
 using Brainova.DAL.Repositories.Interface;
 
+
 using Microsoft.EntityFrameworkCore;
 using System.Text.Json;
 
@@ -24,135 +25,146 @@ namespace Brainova.BLL.Services.Classes
 
         public async Task<Guid> SubmitAsync(string studentId, SubmitReportRequest req)
         {
-            var caseRepo = _uow.Repo<MriCase>();
-            var reportRepo = _uow.Repo<Report>();
-            var questionRepo = _uow.Repo<ReportQuestion>();
-            var answerRepo = _uow.Repo<ReportAnswer>();
+            await using var transaction = await _uow.BeginTransactionAsync();
 
-            var mriCase = await caseRepo.GetByIdAsync(req.CaseId);
+           
+                var caseRepo = _uow.Repo<MriCase>();
+                var reportRepo = _uow.Repo<Report>();
+                var questionRepo = _uow.Repo<ReportQuestion>();
+                var answerRepo = _uow.Repo<ReportAnswer>();
 
-            if (mriCase == null)
-                throw new NotFoundException("Case not found");
+                var mriCase = await caseRepo.GetByIdAsync(req.CaseId);
 
-            if (mriCase.StudentId != studentId)
-                throw new ForbiddenException("You don't own this case");
+                if (mriCase == null)
+                    throw new NotFoundException("Case not found");
 
-            if (mriCase.Status != CaseStatus.Uploaded)
-                throw new BadRequestException("Report already submitted or case closed");
+                if (mriCase.StudentId != studentId)
+                    throw new ForbiddenException("You don't own this case");
 
-            bool reportExists = await reportRepo.ExistsAsync(r =>
-                r.CaseId == req.CaseId && r.StudentId == studentId);
+                if (mriCase.Status != CaseStatus.Uploaded)
+                    throw new BadRequestException("Report already submitted or case closed");
 
-            if (reportExists)
-                throw new BadRequestException("Report already exists for this case");
+                bool reportExists = await reportRepo.ExistsAsync(r =>
+                    r.CaseId == req.CaseId && r.StudentId == studentId);
 
-            var student = await _uow.Repo<ApplicationUser>()
-    .Query()
-    .FirstOrDefaultAsync(u => u.Id == studentId);
+                if (reportExists)
+                    throw new BadRequestException("Report already exists for this case");
 
-            if (student == null)
-                throw new NotFoundException("Student not found");
+                var student = await _uow.Repo<ApplicationUser>()
+                    .Query()
+                    .FirstOrDefaultAsync(u => u.Id == studentId);
 
-            if (string.IsNullOrWhiteSpace(student.SupervisorUserId))
-                throw new BadRequestException("Student has no assigned supervisor");
+                if (student == null)
+                    throw new NotFoundException("Student not found");
 
-            var questions = await questionRepo.Query()
-                .Where(q => q.IsActive && q.SupervisorId == student.SupervisorUserId)
-                .OrderBy(q => q.Order)
-                .ToListAsync();
+                if (string.IsNullOrWhiteSpace(student.SupervisorUserId))
+                    throw new BadRequestException("Student has no assigned supervisor");
 
-            if (!questions.Any())
-                throw new BadRequestException("No active report questions found");
+                var questions = await questionRepo.Query()
+                    .Where(q => q.IsActive && q.SupervisorId == student.SupervisorUserId)
+                    .OrderBy(q => q.Order)
+                    .ToListAsync();
 
-            // Make sure all submitted question ids belong to active questions
-            var activeQuestionIds = questions.Select(q => q.Id).ToHashSet();
+                if (!questions.Any())
+                    throw new BadRequestException("No active report questions found");
 
-            var invalidSubmittedQuestion = req.Answers
-                .FirstOrDefault(a => !activeQuestionIds.Contains(a.QuestionId));
+                var activeQuestionIds = questions.Select(q => q.Id).ToHashSet();
 
-            if (invalidSubmittedQuestion != null)
-                throw new BadRequestException("One or more submitted question ids are invalid");
+                var invalidSubmittedQuestion = req.Answers
+                    .FirstOrDefault(a => !activeQuestionIds.Contains(a.QuestionId));
 
-            // We need the first question to decide the conditional logic
-            var preliminaryAssessmentQuestion = questions
-                .FirstOrDefault(q => q.Code.Trim().ToLower() == "preliminary assesment");
+                if (invalidSubmittedQuestion != null)
+                    throw new BadRequestException("One or more submitted question ids are invalid");
 
-            if (preliminaryAssessmentQuestion == null)
-                throw new BadRequestException("Preliminary assessment question is missing");
+                var preliminaryAssessmentQuestion = questions
+                    .FirstOrDefault(q => q.Code.Trim().ToLower() == "preliminary assesment");
 
-            var preliminaryAssessmentAnswer = req.Answers
-                .FirstOrDefault(a => a.QuestionId == preliminaryAssessmentQuestion.Id)?
-                .AnswerValue?
-                .Trim();
+                if (preliminaryAssessmentQuestion == null)
+                    throw new BadRequestException("Preliminary assessment question is missing");
 
-            if (string.IsNullOrWhiteSpace(preliminaryAssessmentAnswer))
-                throw new BadRequestException("Preliminary assessment answer is required");
+                var preliminaryAssessmentAnswer = req.Answers
+                    .FirstOrDefault(a => a.QuestionId == preliminaryAssessmentQuestion.Id)?
+                    .AnswerValue?
+                    .Trim();
 
-            // Validate the first question itself first
-            ValidateAnswer(preliminaryAssessmentQuestion, preliminaryAssessmentAnswer);
+                if (string.IsNullOrWhiteSpace(preliminaryAssessmentAnswer))
+                    throw new BadRequestException("Preliminary assessment answer is required");
 
-            bool isNoTumor = preliminaryAssessmentAnswer.Trim().ToLower() == "no tumor";
+                ValidateAnswer(preliminaryAssessmentQuestion, preliminaryAssessmentAnswer);
 
-            var report = new Report
-            {
-                Id = Guid.NewGuid(),
-                CaseId = req.CaseId,
-                StudentId = studentId,
-                SubmittedAt = DateTime.UtcNow
-            };
+                bool isNoTumor = preliminaryAssessmentAnswer.Trim().ToLower() == "no tumor";
 
-            await reportRepo.AddAsync(report);
-
-            foreach (var q in questions)
-            {
-                var submitted = req.Answers.FirstOrDefault(a => a.QuestionId == q.Id);
-                var value = submitted?.AnswerValue?.Trim();
-
-                bool shouldSkipBecauseNoTumor =
-                    isNoTumor &&
-                    (
-                        q.Code.Trim().ToLower() == "tumor size" ||
-                        q.Code.Trim().ToLower() == "tumor location" ||
-                        q.Code.Trim().ToLower() == "functional impact"
-                    );
-
-                if (shouldSkipBecauseNoTumor)
-                {
-                    value = null;
-                }
-                else
-                {
-                    if (q.IsRequired && string.IsNullOrWhiteSpace(value))
-                        ValidateAnswer(q, value);
-
-                    if (!string.IsNullOrWhiteSpace(value))
-                        ValidateAnswer(q, value);
-                }
-
-                var answer = new ReportAnswer
+                var report = new Report
                 {
                     Id = Guid.NewGuid(),
-                    ReportId = report.Id,
-                    QuestionId = q.Id,
-                    AnswerValue = value,
-                    QuestionTextSnapshot = q.Text,
-                    QuestionTypeSnapshot = q.Type
+                    CaseId = req.CaseId,
+                    StudentId = studentId,
+                    SubmittedAt = DateTime.UtcNow
                 };
 
-                await answerRepo.AddAsync(answer);
+                await reportRepo.AddAsync(report);
+                await _uow.SaveChangesAsync(); // first save: DB generates ReportNumber
+
+                if (report.ReportNumber <= 0)
+                    throw new BadRequestException("Failed to generate report number.");
+
+                report.ReportCode = BuildReportCode(report.ReportNumber, report.SubmittedAt);
+                //reportRepo.Update(report);
+
+                foreach (var q in questions)
+                {
+                    var submitted = req.Answers.FirstOrDefault(a => a.QuestionId == q.Id);
+                    var value = submitted?.AnswerValue?.Trim();
+
+                    var normalizedCode = q.Code.Trim().ToLower();
+
+                    bool shouldSkipBecauseNoTumor =
+                        isNoTumor &&
+                        (
+                            normalizedCode == "tumor size" ||
+                            normalizedCode == "tumor location" ||
+                            normalizedCode == "functional impact"
+                        );
+
+                    if (shouldSkipBecauseNoTumor)
+                    {
+                        value = null;
+                    }
+                    else
+                    {
+                        if (q.IsRequired && string.IsNullOrWhiteSpace(value))
+                            ValidateAnswer(q, value);
+
+                        if (!string.IsNullOrWhiteSpace(value))
+                            ValidateAnswer(q, value);
+                    }
+
+                    var answer = new ReportAnswer
+                    {
+                        Id = Guid.NewGuid(),
+                        ReportId = report.Id,
+                        QuestionId = q.Id,
+                        AnswerValue = value,
+                        QuestionTextSnapshot = q.Text,
+                        QuestionTypeSnapshot = q.Type
+                    };
+
+                    await answerRepo.AddAsync(answer);
+                }
+
+                mriCase.Status = CaseStatus.ReportSubmitted;
+                caseRepo.Update(mriCase);
+
+                await _uow.SaveChangesAsync(); // second save
+                await transaction.CommitAsync();
+
+                return report.Id;
             }
-
-            mriCase.Status = CaseStatus.ReportSubmitted;
-            caseRepo.Update(mriCase);
-
-            await _uow.SaveChangesAsync();
-
-            return report.Id;
-        }
+           
 
         public async Task<List<SupervisorNewReportResponse>> GetNewForSupervisorAsync(string supervisorId)
         {
-            return await _uow.Repo<Report>()
+            var reports = await _uow.Repo<Report>()
                 .Query()
                 .Where(r =>
                     (r.Case.Status == CaseStatus.ReportSubmitted || r.Case.Status == CaseStatus.Predicted) &&
@@ -161,12 +173,22 @@ namespace Brainova.BLL.Services.Classes
                 .Select(r => new SupervisorNewReportResponse
                 {
                     ReportId = r.Id,
+                    ReportCode = r.ReportCode,
                     CaseId = r.CaseId,
                     SubmittedAt = r.SubmittedAt,
                     StudentId = r.Case.StudentId,
                     StudentName = r.Case.Student.FullName
                 })
                 .ToListAsync();
+
+            var tz = TimeZoneInfo.FindSystemTimeZoneById("Asia/Hebron");
+
+            foreach (var report in reports)
+            {
+                report.SubmittedAt = TimeZoneInfo.ConvertTimeFromUtc(report.SubmittedAt, tz);
+            }
+
+            return reports;
         }
         public async Task<SupervisorReportDetailsRawResponse> GetSupervisorDetailsAsync(string supervisorId, Guid reportId)
         {
@@ -218,11 +240,15 @@ namespace Brainova.BLL.Services.Classes
             var dto = new SupervisorReportDetailsRawResponse
             {
                 ReportId = report.Id,
+                ReportCode = report.ReportCode ,
                 CaseId = report.CaseId,
                 StudentId = report.Case.StudentId,
                 StudentName = report.Case.Student.FullName,
                 StudentEmail = report.Case.Student.Email,
-                SubmittedAt = report.SubmittedAt,
+                SubmittedAt = TimeZoneInfo.ConvertTimeFromUtc(
+    report.SubmittedAt,
+    TimeZoneInfo.FindSystemTimeZoneById("Asia/Hebron")
+),
                 StoredFileName = report.Case.StoredFileName,
                 PredictionResult = report.Case.AiResult?.PredictionResult,
                 Probabilities = probabilities,
@@ -323,13 +349,21 @@ namespace Brainova.BLL.Services.Classes
             return new ReportPdfResponse
             {
                 ReportId = report.Id,
+                ReportCode = report.ReportCode,
                 CaseId = report.CaseId,
                 StudentId = report.Case.StudentId,
                 StudentName = report.Case.Student.FullName,
                 SupervisorName = supervisorName,
-                SubmittedAt = report.SubmittedAt,
-                CaseCreatedAt = report.Case.CreatedAt,
-                PredictionCreatedAt = report.Case.AiResult?.CreatedAt,
+                SubmittedAt = TimeZoneInfo.ConvertTimeFromUtc(
+    report.SubmittedAt,
+    TimeZoneInfo.FindSystemTimeZoneById("Asia/Hebron")
+),
+                CaseCreatedAt =TimeZoneInfo.ConvertTimeFromUtc( report.Case.CreatedAt,
+                TimeZoneInfo.FindSystemTimeZoneById("Asia/Hebron")),
+               
+
+                PredictionCreatedAt =TimeZoneInfo.ConvertTimeFromUtc( report.Case.AiResult.CreatedAt,
+                TimeZoneInfo.FindSystemTimeZoneById("Asia/Hebron")),
                 StoredFileName = report.Case.StoredFileName,
                 PredictionResult = report.Case.AiResult?.PredictionResult,
                 Probabilities = probabilities,
@@ -391,6 +425,10 @@ namespace Brainova.BLL.Services.Classes
                 throw new BadRequestException(
                     $"Invalid answer '{value}' for '{question.Code}'. Allowed values: {string.Join(", ", options)}"
                 );
+        }
+        private static string BuildReportCode(long reportNumber, DateTime submittedAtUtc)
+        {
+            return $"REP-{submittedAtUtc.Year}-{reportNumber:D6}";
         }
     }
 }

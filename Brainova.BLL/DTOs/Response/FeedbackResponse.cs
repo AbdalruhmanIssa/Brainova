@@ -6,6 +6,7 @@ namespace Brainova.BLL.DTOs.Response
     {
         public Guid Id { get; set; }
         public Guid ReportId { get; set; }
+        public string? ReportCode { get; set; } = default!;
         public DateTime ReportCreatedAt { get; set; }
         public string? PredictionResult { get; set; }
 

@@ -7,6 +7,7 @@ namespace Brainova.BLL.DTOs.Response.Report
     public class SupervisorReportDetailsResponse
     {
         public Guid ReportId { get; set; }
+        public string? ReportCode { get; set; } = default!;
         public Guid CaseId { get; set; }
 
         public string StudentId { get; set; } = default!;

@@ -1,5 +1,6 @@
 ﻿using Brainova.DAL.Data;
 using Brainova.DAL.Repositories.Interface;
+using Microsoft.EntityFrameworkCore.Storage;
 using System;
 using System.Collections.Generic;
 using System.Text;
@@ -30,6 +31,8 @@ namespace Brainova.DAL.Repositories.Classes
 
         public Task<int> SaveChangesAsync(CancellationToken ct = default)
             => _db.SaveChangesAsync(ct);
+        public Task<IDbContextTransaction> BeginTransactionAsync(CancellationToken ct = default)
+            => _db.Database.BeginTransactionAsync(ct);
 
         public void Dispose() => _db.Dispose();
     }

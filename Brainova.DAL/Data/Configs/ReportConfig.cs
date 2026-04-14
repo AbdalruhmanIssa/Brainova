@@ -24,8 +24,20 @@ namespace Brainova.DAL.Data.Configs
                 .HasForeignKey(x => x.StudentId)
                 .OnDelete(DeleteBehavior.Restrict);
 
-            // 1 student -> 1 report -> 1 case
             b.HasIndex(x => new { x.CaseId, x.StudentId }).IsUnique();
+
+            b.Property(x => x.ReportNumber)
+                .UseIdentityColumn()
+                .ValueGeneratedOnAdd();
+
+            b.Property(x => x.ReportCode)
+                .HasMaxLength(30);
+
+            b.HasIndex(x => x.ReportNumber).IsUnique();
+
+            b.HasIndex(x => x.ReportCode)
+                .IsUnique()
+                .HasFilter("[ReportCode] IS NOT NULL");
         }
     }
 }

@@ -20,6 +20,7 @@ namespace Brainova.BLL.DTOs.Response
         public bool IsReviewed { get; set; }
 
         public Guid? ReportId { get; set; }
+        public string? ReportCode { get; set; }= default!;
         public DateTime? ReportSubmittedAt { get; set; }
 
         public Guid? FeedbackId { get; set; }

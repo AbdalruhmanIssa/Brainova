@@ -64,6 +64,7 @@ namespace Brainova.PL.Controllers.Supervisor
             var dto = new SupervisorReportDetailsResponse
             {
                 ReportId = raw.ReportId,
+                ReportCode=raw.ReportCode,
                 CaseId = raw.CaseId,
                 StudentId = raw.StudentId,
                 StudentName = raw.StudentName,

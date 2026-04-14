@@ -18,7 +18,7 @@ namespace Brainova.BLL.Services.Interface
         string supervisorId,
         string? studentId = null,
         CancellationToken ct = default);
-        Task<List<AdminCaseDetailsResponse>> GetAdminCasesAsync(CancellationToken ct = default);
+     
 
     }
 }

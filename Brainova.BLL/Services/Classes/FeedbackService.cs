@@ -1,6 +1,5 @@
 ﻿using Brainova.BLL.DTOs.Request;
 using Brainova.BLL.DTOs.Response;
-using Brainova.BLL.DTOs.Response.Feedback;
 using Brainova.BLL.Exceptions;
 using Brainova.BLL.Services.Interface;
 using Brainova.DAL.Enums;
@@ -89,9 +88,11 @@ namespace Brainova.BLL.Services.Classes
                 throw new UnauthorizedException("Supervisor is not authenticated");
 
             var report = await _uow.Repo<Report>()
-                .Query()
-                .Include(r => r.Student)
-                .FirstOrDefaultAsync(r => r.Id == reportId);
+    .Query()
+    .Include(r => r.Student)
+    .Include(r => r.Case)
+        .ThenInclude(c => c.AiResult)
+    .FirstOrDefaultAsync(r => r.Id == reportId);
 
             if (report is null)
                 throw new NotFoundException("Report not found");
@@ -119,10 +120,15 @@ namespace Brainova.BLL.Services.Classes
                     {
                         Id = x.f.Id,
                         ReportId = x.f.ReportId,
+                        ReportCode = report.ReportCode,
                         SupervisorId = x.f.SupervisorId,
+                       
                         SupervisorName = x.sup.FullName,
                         StudentId = x.f.StudentId,
                         StudentName = stu.FullName,
+                        PredictionResult = report.Case.AiResult != null
+                            ? report.Case.AiResult.PredictionResult
+                            : null,
                         Comment = x.f.Comment,
                         CreatedAt = x.f.CreatedAt
                     }
@@ -131,6 +137,10 @@ namespace Brainova.BLL.Services.Classes
 
             if (feedback is null)
                 throw new NotFoundException("Feedback not found for this report");
+            feedback.CreatedAt = TimeZoneInfo.ConvertTimeFromUtc(
+    feedback.CreatedAt,
+    TimeZoneInfo.FindSystemTimeZoneById("Asia/Hebron")
+);
 
             return feedback;
         }
@@ -141,8 +151,11 @@ namespace Brainova.BLL.Services.Classes
                 throw new UnauthorizedException("Student is not authenticated");
 
             var report = await _uow.Repo<Report>()
-                .Query()
-                .FirstOrDefaultAsync(r => r.Id == reportId);
+   .Query()
+   .Include(r => r.Student)
+   .Include(r => r.Case)
+       .ThenInclude(c => c.AiResult)
+   .FirstOrDefaultAsync(r => r.Id == reportId);
 
             if (report is null)
                 throw new NotFoundException("Report not found");
@@ -157,11 +170,7 @@ namespace Brainova.BLL.Services.Classes
             if (feedbackEntity is null)
                 throw new NotFoundException("Feedback not found for this report");
 
-            if (!feedbackEntity.IsSeen)
-            {
-                feedbackEntity.IsSeen = true;
-                await _uow.SaveChangesAsync();
-            }
+            
 
             var feedback = await _uow.Repo<Feedback>()
                 .Query()
@@ -180,6 +189,10 @@ namespace Brainova.BLL.Services.Classes
                     {
                         Id = x.f.Id,
                         ReportId = x.f.ReportId,
+                            ReportCode = report.ReportCode,
+                            PredictionResult = report.Case.AiResult != null
+                                ? report.Case.AiResult.PredictionResult
+                                : null,
                         SupervisorId = x.f.SupervisorId,
                         SupervisorName = x.sup.FullName,
                         StudentId = x.f.StudentId,
@@ -216,6 +229,7 @@ namespace Brainova.BLL.Services.Classes
                     {
                         Id = x.f.Id,
                         ReportId = x.f.ReportId,
+                        ReportCode=x.f.Report.ReportCode,
                         SupervisorId = x.f.SupervisorId,
                         SupervisorName = x.sup.FullName,
                         StudentId = x.f.StudentId,
@@ -257,6 +271,7 @@ GetAllForStudentAsync(string studentId, CancellationToken ct = default)
                     {
                         FeedbackId = x.f.Id,
                         ReportId = x.f.ReportId,
+                        ReportCode = x.f.Report.ReportCode,
                         CaseId = x.r.CaseId,
 
                         SupervisorId = x.f.SupervisorId,
@@ -270,6 +285,13 @@ GetAllForStudentAsync(string studentId, CancellationToken ct = default)
                 .OrderBy(x => x.IsSeen)                // unseen first
                 .ThenByDescending(x => x.CreatedAt)   // newest first
                 .ToListAsync(ct);
+            var tz = TimeZoneInfo.FindSystemTimeZoneById("Asia/Hebron");
+
+            foreach (var item in items)
+            {
+                item.CreatedAt = TimeZoneInfo.ConvertTimeFromUtc(item.CreatedAt, tz);
+            }
+            
 
             return (totalCount, unseenCount, items);
         }
@@ -301,6 +323,7 @@ GetUnseenForStudentAsync(string studentId, CancellationToken ct = default)
                     {
                         FeedbackId = x.f.Id,
                         ReportId = x.f.ReportId,
+                        ReportCode = x.f.Report.ReportCode,
                         CaseId = x.r.CaseId,
 
                         SupervisorId = x.f.SupervisorId,
@@ -313,6 +336,12 @@ GetUnseenForStudentAsync(string studentId, CancellationToken ct = default)
                 )
                 .OrderByDescending(x => x.CreatedAt)
                 .ToListAsync(ct);
+            var tz = TimeZoneInfo.FindSystemTimeZoneById("Asia/Hebron");
+
+            foreach (var item in items)
+            {
+                item.CreatedAt = TimeZoneInfo.ConvertTimeFromUtc(item.CreatedAt, tz);
+            }
 
             return (totalCount, items);
         }
@@ -390,6 +419,7 @@ GetUnseenForStudentAsync(string studentId, CancellationToken ct = default)
                     {
                         Id = x.f.Id,
                         ReportId = x.f.ReportId,
+                        ReportCode = x.f.Report.ReportCode,
 
                         SupervisorId = x.f.SupervisorId,
                         SupervisorName = x.sup.FullName,
@@ -409,6 +439,12 @@ GetUnseenForStudentAsync(string studentId, CancellationToken ct = default)
                 )
                 .OrderByDescending(x => x.CreatedAt)
                 .ToListAsync(ct);
+            var tz = TimeZoneInfo.FindSystemTimeZoneById("Asia/Hebron");
+
+            foreach (var item in items)
+            {
+                item.CreatedAt = TimeZoneInfo.ConvertTimeFromUtc(item.CreatedAt, tz);
+            }
 
             return (totalCount, items);
         }
@@ -454,7 +490,7 @@ GetUnseenForStudentAsync(string studentId, CancellationToken ct = default)
                     {
                         Id = x.f.Id,
                         ReportId = x.f.ReportId,
-
+                        ReportCode = x.f.Report.ReportCode,
                         SupervisorId = x.f.SupervisorId,
                         SupervisorName = x.sup.FullName,
 
@@ -507,53 +543,7 @@ GetUnseenForStudentAsync(string studentId, CancellationToken ct = default)
 
             return "Feedback deleted successfully";
         }
-        public async Task<(int TotalCount, List<AdminFeedbackResponse> Items)>
-    GetAdminFeedbacksAsync(CancellationToken ct = default)
-        {
-            var baseQuery = _uow.Repo<Feedback>().Query();
 
-            var totalCount = await baseQuery.CountAsync(ct);
-
-            var items = await baseQuery
-                .Join(
-                    _uow.Repo<Report>().Query(),
-                    f => f.ReportId,
-                    r => r.Id,
-                    (f, r) => new { f, r }
-                )
-                .Join(
-                    _uow.Repo<ApplicationUser>().Query(),
-                    x => x.f.StudentId,
-                    stu => stu.Id,
-                    (x, stu) => new { x.f, x.r, stu }
-                )
-                .Join(
-                    _uow.Repo<ApplicationUser>().Query(),
-                    x => x.f.SupervisorId,
-                    sup => sup.Id,
-                    (x, sup) => new { x.f, x.r, x.stu, sup }
-                )
-                .OrderByDescending(x => x.f.CreatedAt)
-                .Select(x => new AdminFeedbackResponse
-                {
-                    FeedbackId = x.f.Id,
-                    ReportId = x.f.ReportId,
-                    CaseId = x.r.CaseId,
-
-                    StudentId = x.f.StudentId,
-                    StudentName = x.stu.FullName,
-
-                    SupervisorId = x.f.SupervisorId,
-                    SupervisorName = x.sup.FullName,
-
-                    Comment = x.f.Comment,
-                    CreatedAt = x.f.CreatedAt,
-                    IsSeen = x.f.IsSeen
-                })
-                .ToListAsync(ct);
-
-            return (totalCount, items);
-        }
 
 
     }

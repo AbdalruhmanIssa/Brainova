@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.EntityFrameworkCore;
 using System.Text.Json;
 using Brainova.BLL.Exceptions;
+
 namespace Brainova.BLL.Services.Classes
 {
     public class AiResultService : IAiResultService
@@ -15,7 +16,10 @@ namespace Brainova.BLL.Services.Classes
         private readonly IWebHostEnvironment _env;
         private readonly IAiTumorService _aiTumorService;
 
-        public AiResultService(IUnitOfWork uow, IWebHostEnvironment env, IAiTumorService aiTumorService)
+        public AiResultService(
+            IUnitOfWork uow,
+            IWebHostEnvironment env,
+            IAiTumorService aiTumorService)
         {
             _uow = uow;
             _env = env;
@@ -23,19 +27,31 @@ namespace Brainova.BLL.Services.Classes
         }
 
         public async Task<PredictResponse> PredictAsync(
-     string studentId,
-     Guid caseId,
-     CancellationToken ct = default)
+            string studentId,
+            Guid caseId,
+            CancellationToken ct = default)
         {
-            // 1️⃣ Load case + ownership check
+            // 1) Load case + ownership check
             var mriCase = await _uow.Repo<MriCase>()
                 .Query()
                 .FirstOrDefaultAsync(x => x.Id == caseId && x.StudentId == studentId, ct);
 
             if (mriCase == null)
-                throw new Exception("Case not found.");
+                throw new NotFoundException("Case not found.");
 
-            // 2️⃣ Load image from disk
+            // 2) Prevent duplicate prediction before calling AI
+            var existingAiResult = await _uow.Repo<AiResult>()
+                .Query()
+                .FirstOrDefaultAsync(x => x.CaseId == caseId, ct);
+
+            if (existingAiResult != null)
+                throw new BadRequestException("AI prediction already exists for this case.");
+
+            // optional extra guard by status
+            if (mriCase.Status == CaseStatus.Predicted || mriCase.Status == CaseStatus.Reviewed)
+                throw new BadRequestException("This case has already been predicted.");
+
+            // 3) Load image from disk
             var fullPath = Path.Combine(
                 _env.ContentRootPath,
                 "App_Data",
@@ -44,18 +60,18 @@ namespace Brainova.BLL.Services.Classes
             );
 
             if (!File.Exists(fullPath))
-                throw new Exception("Image file missing.");
+                throw new NotFoundException("Image file is missing.");
 
             await using var stream = new FileStream(fullPath, FileMode.Open, FileAccess.Read);
 
-            // 3️⃣ Call AI service (your existing stream overload)
+            // 4) Call AI service
             var ai = await _aiTumorService.GetGradcamAsync(
                 stream,
                 mriCase.StoredFileName,
                 "image/jpeg",
                 ct);
 
-            // 4️⃣ Save AiResult
+            // 5) Save AiResult
             var aiResult = new AiResult
             {
                 CaseId = caseId,
@@ -66,20 +82,22 @@ namespace Brainova.BLL.Services.Classes
 
             await _uow.Repo<AiResult>().AddAsync(aiResult, ct);
 
-            // 5️⃣ Update case status
+            // 6) Update case status
             mriCase.Status = CaseStatus.Predicted;
             _uow.Repo<MriCase>().Update(mriCase);
 
             await _uow.SaveChangesAsync(ct);
 
-            // 6️⃣ Return response
+            // 7) Return response
             return new PredictResponse
             {
                 CaseId = caseId,
                 Prediction = aiResult.PredictionResult,
                 Probabilities = ai.Probabilities,
                 GradcamUrl = $"/api/AiTumors/gradcam-image/{aiResult.GradcamFileName}",
-                CreatedAt = aiResult.CreatedAt
+                CreatedAt = TimeZoneInfo.ConvertTimeFromUtc(
+                    aiResult.CreatedAt,
+                    TimeZoneInfo.FindSystemTimeZoneById("Asia/Hebron"))
             };
         }
     }

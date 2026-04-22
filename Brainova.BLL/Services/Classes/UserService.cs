@@ -19,6 +19,7 @@ namespace Brainova.BLL.Services.Classes
         private readonly IEmailSender _emailSender;
         private readonly IUnitOfWork _uow;
         private readonly IHttpContextAccessor _httpContextAccessor;
+       // private readonly IReportQuestionService _reportQuestionService;
 
 
         public UserService(
@@ -27,12 +28,14 @@ namespace Brainova.BLL.Services.Classes
             IEmailSender emailSender,
             IUnitOfWork uow,
             IHttpContextAccessor httpContextAccessor)
+         //   IReportQuestionService reportQuestionService)
         {
             _userRepository = userRepository;
             _userManager = userManager;
             _emailSender = emailSender;
             _uow = uow;
             _httpContextAccessor = httpContextAccessor;
+         //   _reportQuestionService = reportQuestionService;
         }
         //GET
 
@@ -227,6 +230,10 @@ public async Task<List<SupervisorStudentListItemResponse>> GetSupervisorStudents
             var (success, message, createdUser) = await _userRepository.CreateUserWithRoleAsync(user, roleName);
             if (!success || createdUser == null)
                 throw new BadRequestException(message);
+            //if (roleName == "Supervisor")
+            //{
+            //    await _reportQuestionService.SeedDefaultQuestionsForSupervisorAsync(createdUser.Id);
+            //}
 
             var token = await _userManager.GeneratePasswordResetTokenAsync(createdUser);
             var tokenEscaped = Uri.EscapeDataString(token);
@@ -653,25 +660,7 @@ public async Task<List<SupervisorStudentListItemResponse>> GetSupervisorStudents
             return result;
         }
 
-        public async Task<string> DeleteUserAsync(string userId)
-        {
-            var user = await _userManager.FindByIdAsync(userId);
-            if (user is null) throw new NotFoundException("User not found");
-
-            var roles = await _userManager.GetRolesAsync(user);
-            if (roles.Contains("Supervisor"))
-            {
-                var hasStudents = await _userManager.Users.AnyAsync(u => u.SupervisorUserId == user.Id);
-                if (hasStudents)
-                    throw new BadRequestException("Can't delete supervisor: has assigned students");
-            }
-
-            var result = await _userManager.DeleteAsync(user);
-            if (!result.Succeeded)
-                throw new BadRequestException(string.Join(";", result.Errors.Select(e => e.Description)));
-
-            return "User deleted successfully";
-        }
+        
 
        
     }

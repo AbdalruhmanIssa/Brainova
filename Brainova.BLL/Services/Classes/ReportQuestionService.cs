@@ -46,6 +46,7 @@ namespace Brainova.BLL.Services.Classes
                 Order = req.Order,
                 IsActive = req.IsActive,
                 IsRequired = req.IsRequired,
+                SkipWhenNoTumor = req.SkipWhenNoTumor,
                 OptionsJson = req.Options != null && req.Options.Any()
                     ? JsonSerializer.Serialize(
                         req.Options
@@ -119,6 +120,7 @@ namespace Brainova.BLL.Services.Classes
             question.Order = req.Order;
             question.IsActive = req.IsActive;
             question.IsRequired = req.IsRequired;
+            question.SkipWhenNoTumor = req.SkipWhenNoTumor;
             question.OptionsJson = req.Options != null && req.Options.Any()
                 ? JsonSerializer.Serialize(
                     req.Options
@@ -270,6 +272,7 @@ namespace Brainova.BLL.Services.Classes
             Order = 2,
             IsActive = true,
             IsRequired = true,
+            SkipWhenNoTumor = true,
             OptionsJson = JsonSerializer.Serialize(new List<string>
             {
                 "small",
@@ -287,6 +290,7 @@ namespace Brainova.BLL.Services.Classes
             Order = 3,
             IsActive = true,
             IsRequired = true,
+            SkipWhenNoTumor = true,
             OptionsJson = JsonSerializer.Serialize(new List<string>
             {
                 "frontal",
@@ -305,6 +309,7 @@ namespace Brainova.BLL.Services.Classes
             Order = 4,
             IsActive = true,
             IsRequired = true,
+            SkipWhenNoTumor = true,
             OptionsJson = null
         },
         new ReportQuestion

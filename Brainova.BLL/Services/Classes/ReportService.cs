@@ -116,15 +116,7 @@ namespace Brainova.BLL.Services.Classes
                     var submitted = req.Answers.FirstOrDefault(a => a.QuestionId == q.Id);
                     var value = submitted?.AnswerValue?.Trim();
 
-                    var normalizedCode = q.Code.Trim().ToLower();
-
-                    bool shouldSkipBecauseNoTumor =
-                        isNoTumor &&
-                        (
-                            normalizedCode == "tumor size" ||
-                            normalizedCode == "tumor location" ||
-                            normalizedCode == "functional impact"
-                        );
+                    bool shouldSkipBecauseNoTumor = isNoTumor && q.SkipWhenNoTumor;
 
                     if (shouldSkipBecauseNoTumor)
                     {

@@ -12,6 +12,10 @@ namespace Brainova.DAL.Modles
         public bool IsActive { get; set; } = true;
         public bool IsRequired { get; set; }=true;
 
+        // If true, this question's answer is ignored/skipped when
+        // the preliminary assessment answer is "no tumor".
+        public bool SkipWhenNoTumor { get; set; } = false;
+
         // For choices: JSON array string e.g. ["Glioma","Meningioma"]
         public string? OptionsJson { get; set; }
         public string SupervisorId { get; set; } = default!;

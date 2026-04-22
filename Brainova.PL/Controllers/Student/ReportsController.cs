@@ -41,6 +41,7 @@ namespace Brainova.PL.Controllers.Student
                 Type = q.Type,
                 Order = q.Order,
                 IsRequired = q.IsRequired,
+                SkipWhenNoTumor = q.SkipWhenNoTumor,
                 Options = string.IsNullOrWhiteSpace(q.OptionsJson)
                     ? null
                     : System.Text.Json.JsonSerializer.Deserialize<List<string>>(q.OptionsJson)

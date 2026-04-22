@@ -35,7 +35,7 @@ namespace Brainova.BLL.Services.Interface
         Task<ChangeUserRoleResponse> ChangeUserRoleAsync(ChangeUserRoleRequest request);
 
         // Delete
-        Task<string> DeleteUserAsync(string userId);
+     
         Task<BulkDeleteUsersResponse> DeleteUsersAsync(DeleteUsersRequest request);
 
     }

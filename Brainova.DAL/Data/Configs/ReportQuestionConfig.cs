@@ -17,6 +17,7 @@ namespace Brainova.DAL.Data.Configs
             b.Property(x => x.Order).IsRequired();
             b.Property(x => x.IsActive).IsRequired();
             b.Property(x => x.IsRequired).IsRequired();
+            b.Property(x => x.SkipWhenNoTumor).IsRequired().HasDefaultValue(false);
             b.Property(x => x.OptionsJson).HasColumnType("nvarchar(max)");
 
             b.Property(x => x.SupervisorId)

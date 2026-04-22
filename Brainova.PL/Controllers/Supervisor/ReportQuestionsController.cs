@@ -49,6 +49,7 @@ namespace Brainova.PL.Controllers.Supervisor
                 Order = q.Order,
                 IsActive = q.IsActive,
                 IsRequired = q.IsRequired,
+                SkipWhenNoTumor = q.SkipWhenNoTumor,
                 Options = string.IsNullOrWhiteSpace(q.OptionsJson)
                     ? null
                     : System.Text.Json.JsonSerializer.Deserialize<List<string>>(q.OptionsJson)

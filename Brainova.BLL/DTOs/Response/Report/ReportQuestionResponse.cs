@@ -11,6 +11,7 @@ namespace Brainova.BLL.DTOs.Response.Report
         public int Order { get; set; }
         public bool IsRequired { get; set; }
         public bool SkipWhenNoTumor { get; set; }
+        public bool IsSystem { get; set; }
         public List<string>? Options { get; set; }
     }
 }

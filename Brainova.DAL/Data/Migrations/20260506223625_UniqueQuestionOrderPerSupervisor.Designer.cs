@@ -4,6 +4,7 @@ using Brainova.DAL.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace Brainova.DAL.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260506223625_UniqueQuestionOrderPerSupervisor")]
+    partial class UniqueQuestionOrderPerSupervisor
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -299,6 +302,7 @@ namespace Brainova.DAL.Migrations
                         .HasDefaultValue(false);
 
                     b.Property<string>("SupervisorId")
+                        .IsRequired()
                         .HasMaxLength(450)
                         .HasColumnType("nvarchar(450)");
 
@@ -318,12 +322,10 @@ namespace Brainova.DAL.Migrations
                     b.HasIndex("SupervisorId");
 
                     b.HasIndex("SupervisorId", "Code")
-                        .IsUnique()
-                        .HasFilter("[SupervisorId] IS NOT NULL");
+                        .IsUnique();
 
                     b.HasIndex("SupervisorId", "Order")
-                        .IsUnique()
-                        .HasFilter("[SupervisorId] IS NOT NULL");
+                        .IsUnique();
 
                     b.ToTable("ReportQuestions", (string)null);
                 });
@@ -536,7 +538,8 @@ namespace Brainova.DAL.Migrations
                     b.HasOne("Brainova.DAL.Modles.ApplicationUser", "Supervisor")
                         .WithMany()
                         .HasForeignKey("SupervisorId")
-                        .OnDelete(DeleteBehavior.Restrict);
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
 
                     b.Navigation("Supervisor");
                 });

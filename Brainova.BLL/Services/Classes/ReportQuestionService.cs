@@ -34,6 +34,12 @@ namespace Brainova.BLL.Services.Classes
             if (exists)
                 throw new BadRequestException("Question code already exists for this supervisor.");
 
+            bool orderTaken = await repo.ExistsAsync(
+                x => x.SupervisorId == supervisorId && x.Order == req.Order);
+
+            if (orderTaken)
+                throw new BadRequestException($"Order {req.Order} is already used by another question for this supervisor.");
+
             ValidateQuestionRequest(req);
 
             var q = new ReportQuestion
@@ -102,6 +108,9 @@ namespace Brainova.BLL.Services.Classes
             if (question.SupervisorId != supervisorId)
                 throw new ForbiddenException("You are not allowed to update this question");
 
+            if (question.IsSystem)
+                throw new ForbiddenException("This is a system question and cannot be modified.");
+
             var normalizedCode = req.Code.Trim().ToLower();
 
             var codeUsedByAnother = await repo.ExistsAsync(
@@ -111,6 +120,14 @@ namespace Brainova.BLL.Services.Classes
 
             if (codeUsedByAnother)
                 throw new BadRequestException("Question code already exists for this supervisor.");
+
+            var orderUsedByAnother = await repo.ExistsAsync(
+                x => x.SupervisorId == supervisorId &&
+                     x.Order == req.Order &&
+                     x.Id != id);
+
+            if (orderUsedByAnother)
+                throw new BadRequestException($"Order {req.Order} is already used by another question for this supervisor.");
 
             ValidateQuestionRequest(req);
 
@@ -144,6 +161,9 @@ namespace Brainova.BLL.Services.Classes
 
             if (question.SupervisorId != supervisorId)
                 throw new ForbiddenException("You are not allowed to update this question");
+
+            if (question.IsSystem)
+                throw new ForbiddenException("This is a system question and cannot be deactivated.");
 
             question.IsActive = !question.IsActive;
             repo.Update(question);
@@ -254,6 +274,7 @@ namespace Brainova.BLL.Services.Classes
             Order = 1,
             IsActive = true,
             IsRequired = true,
+            IsSystem = true,
             OptionsJson = JsonSerializer.Serialize(new List<string>
             {
                 "glioma",
@@ -331,6 +352,45 @@ namespace Brainova.BLL.Services.Classes
 
             await _uow.SaveChangesAsync(ct);
         }
+        public async Task SeedSystemQuestionsForSupervisorAsync(string supervisorId, CancellationToken ct = default)
+        {
+            await EnsureSupervisorExists(supervisorId);
+
+            var repo = _uow.Repo<ReportQuestion>();
+
+            // Idempotent: only seed if this supervisor doesn't already have the
+            // preliminary assessment system question.
+            bool alreadyHasPreliminary = await repo.Query()
+                .AnyAsync(q => q.SupervisorId == supervisorId
+                            && q.Code == "preliminary assesment", ct);
+
+            if (alreadyHasPreliminary)
+                return;
+
+            var preliminary = new ReportQuestion
+            {
+                Id = Guid.NewGuid(),
+                SupervisorId = supervisorId,
+                Code = "preliminary assesment",
+                Text = "Based on your observation, what type of tumor do you think is shown in the MRI image?",
+                Type = ReportQuestionType.SingleChoice,
+                Order = 1,
+                IsActive = true,
+                IsRequired = true,
+                IsSystem = true,
+                OptionsJson = JsonSerializer.Serialize(new List<string>
+                {
+                    "glioma",
+                    "meningioma",
+                    "pituitary",
+                    "no tumor"
+                })
+            };
+
+            await repo.AddAsync(preliminary, ct);
+            await _uow.SaveChangesAsync(ct);
+        }
+
         public async Task SeedDefaultQuestionsForAllExistingSupervisorsAsync(CancellationToken ct = default)
         {
             var users = await _uow.Repo<ApplicationUser>()

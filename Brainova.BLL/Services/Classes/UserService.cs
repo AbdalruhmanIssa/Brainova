@@ -19,7 +19,7 @@ namespace Brainova.BLL.Services.Classes
         private readonly IEmailSender _emailSender;
         private readonly IUnitOfWork _uow;
         private readonly IHttpContextAccessor _httpContextAccessor;
-       // private readonly IReportQuestionService _reportQuestionService;
+        private readonly IReportQuestionService _reportQuestionService;
 
 
         public UserService(
@@ -27,15 +27,15 @@ namespace Brainova.BLL.Services.Classes
             UserManager<ApplicationUser> userManager,
             IEmailSender emailSender,
             IUnitOfWork uow,
-            IHttpContextAccessor httpContextAccessor)
-         //   IReportQuestionService reportQuestionService)
+            IHttpContextAccessor httpContextAccessor,
+            IReportQuestionService reportQuestionService)
         {
             _userRepository = userRepository;
             _userManager = userManager;
             _emailSender = emailSender;
             _uow = uow;
             _httpContextAccessor = httpContextAccessor;
-         //   _reportQuestionService = reportQuestionService;
+            _reportQuestionService = reportQuestionService;
         }
         //GET
 
@@ -230,10 +230,11 @@ public async Task<List<SupervisorStudentListItemResponse>> GetSupervisorStudents
             var (success, message, createdUser) = await _userRepository.CreateUserWithRoleAsync(user, roleName);
             if (!success || createdUser == null)
                 throw new BadRequestException(message);
-            //if (roleName == "Supervisor")
-            //{
-            //    await _reportQuestionService.SeedDefaultQuestionsForSupervisorAsync(createdUser.Id);
-            //}
+
+            if (roleName == "Supervisor")
+            {
+                await _reportQuestionService.SeedSystemQuestionsForSupervisorAsync(createdUser.Id);
+            }
 
             var token = await _userManager.GeneratePasswordResetTokenAsync(createdUser);
             var tokenEscaped = Uri.EscapeDataString(token);
@@ -606,6 +607,42 @@ public async Task<List<SupervisorStudentListItemResponse>> GetSupervisorStudents
                                 Reason = "students are assigned to this supervisor"
                             });
                             continue;
+                        }
+
+                        // Clean up the supervisor's questions before deleting the user.
+                        // Questions with no answers can be hard-deleted.
+                        // Questions that have been answered get orphaned (SupervisorId = null)
+                        // so historical reports remain intact.
+                        var supervisorQuestions = await _uow.Repo<ReportQuestion>()
+                            .Query()
+                            .Where(q => q.SupervisorId == user.Id)
+                            .ToListAsync();
+
+                        if (supervisorQuestions.Any())
+                        {
+                            var questionIds = supervisorQuestions.Select(q => q.Id).ToList();
+
+                            var answeredQuestionIds = await _uow.Repo<ReportAnswer>()
+                                .Query()
+                                .Where(a => questionIds.Contains(a.QuestionId))
+                                .Select(a => a.QuestionId)
+                                .Distinct()
+                                .ToListAsync();
+
+                            foreach (var q in supervisorQuestions)
+                            {
+                                if (answeredQuestionIds.Contains(q.Id))
+                                {
+                                    q.SupervisorId = null;
+                                    _uow.Repo<ReportQuestion>().Update(q);
+                                }
+                                else
+                                {
+                                    _uow.Repo<ReportQuestion>().Remove(q);
+                                }
+                            }
+
+                            await _uow.SaveChangesAsync();
                         }
                     }
 

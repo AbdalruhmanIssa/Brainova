@@ -52,7 +52,7 @@ namespace Brainova.DAL.Data
             builder.ApplyConfiguration(new ReportConfig());
             builder.ApplyConfiguration(new ReportQuestionConfig());
             builder.ApplyConfiguration(new ReportAnswerConfig());
-        builder.ApplyConfiguration(new FeedbackConfig());
+       builder.ApplyConfiguration(new FeedbackConfig());
 
 
             builder.Entity<ApplicationUser>()

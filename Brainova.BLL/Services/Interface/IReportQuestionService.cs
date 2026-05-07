@@ -12,5 +12,6 @@ namespace Brainova.BLL.Services.Interface
         Task ToggleActiveAsync(string supervisorId, Guid id);
         Task SeedDefaultQuestionsForSupervisorAsync(string supervisorId, CancellationToken ct = default);
         Task SeedDefaultQuestionsForAllExistingSupervisorsAsync(CancellationToken ct = default);
+        Task SeedSystemQuestionsForSupervisorAsync(string supervisorId, CancellationToken ct = default);
     }
 }

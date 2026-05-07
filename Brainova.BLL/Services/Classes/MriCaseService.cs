@@ -56,6 +56,7 @@ namespace Brainova.BLL.Services.Classes
             var cases = await _uow.Repo<MriCase>()
                 .Query()
                 .Where(c => c.StudentId == studentId)
+                .Where(c => c.Status == CaseStatus.Predicted || c.Status == CaseStatus.Reviewed)
                 .Include(c => c.AiResult)
                 .OrderByDescending(c => c.CreatedAt)
                 .Select(c => new
@@ -144,7 +145,8 @@ namespace Brainova.BLL.Services.Classes
                 .Query()
                 .Include(c => c.Student)
                 .Include(c => c.AiResult)
-                .Where(c => c.Student.SupervisorUserId == supervisorId);
+                .Where(c => c.Student.SupervisorUserId == supervisorId)
+                .Where(c => c.Status == CaseStatus.Predicted || c.Status == CaseStatus.Reviewed);
 
             if (!string.IsNullOrWhiteSpace(studentId))
             {

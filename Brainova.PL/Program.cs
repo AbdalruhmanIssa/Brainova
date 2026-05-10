@@ -23,6 +23,10 @@ using Brainova.BLL.Mapping;
 var builder = WebApplication.CreateBuilder(args);
 TypeAdapterConfig.GlobalSettings.Scan(typeof(MapsterConfig).Assembly);
 
+// Configure for cloud deployment (OnRender, Docker, etc.)
+var port = Environment.GetEnvironmentVariable("PORT") ?? "8080";
+builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
+
 
 
 builder.Services.AddScoped<IAuthenticationService, AuthenticationService>();
@@ -62,7 +66,7 @@ builder.Services.AddHttpClient("GradCamClient", client =>
     client.Timeout = TimeSpan.FromMinutes(5);
 });
 
-// 3) Your service (interface -> implementation)
+// 3) CORS Configuration
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowFrontend", policy =>
@@ -72,8 +76,12 @@ builder.Services.AddCors(options =>
             .AllowAnyMethod()
     );
 });
+// Database configuration - read from environment variables or appsettings
+var connectionString = Environment.GetEnvironmentVariable("DB_CONNECTION_STRING")
+    ?? builder.Configuration.GetConnectionString("Default");
+
 builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseSqlServer(builder.Configuration.GetConnectionString("Default")));
+    options.UseSqlServer(connectionString));
 
 // ==============================
 // Identity
@@ -89,7 +97,7 @@ builder.Services
 
         options.User.RequireUniqueEmail = true;
 
-        // you’re using confirm email flow
+        // youï¿½re using confirm email flow
         options.SignIn.RequireConfirmedEmail = true;
 
         // lockout (still useful for brute-force even if you also have IsBlocked)
@@ -120,7 +128,7 @@ builder.Services
             ValidateIssuerSigningKey = true,
             IssuerSigningKey = new SymmetricSecurityKey(keyBytes),
 
-            // If you don’t want issuer/audience, set ValidateIssuer/Audience = false
+            // If you donï¿½t want issuer/audience, set ValidateIssuer/Audience = false
             ValidateIssuer = true,
             ValidIssuer = jwt["Issuer"],
 
@@ -166,7 +174,10 @@ app.UseStaticFiles();
 app.UseAuthentication();
 
 
-app.UseHttpsRedirection();
+if (!app.Environment.IsDevelopment())
+{
+    app.UseHttpsRedirection();
+}
 
 app.UseAuthorization();
 

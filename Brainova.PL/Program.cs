@@ -23,9 +23,13 @@ using Brainova.BLL.Mapping;
 var builder = WebApplication.CreateBuilder(args);
 TypeAdapterConfig.GlobalSettings.Scan(typeof(MapsterConfig).Assembly);
 
-// Configure for cloud deployment (OnRender, Docker, etc.)
-var port = Environment.GetEnvironmentVariable("PORT") ?? "8080";
-builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
+// Configure for cloud deployment (OnRender, Azure App Service, Docker, etc.)
+// Only apply this in non-Development so launchSettings.json (and Scalar) work locally.
+if (!builder.Environment.IsDevelopment())
+{
+    var port = Environment.GetEnvironmentVariable("PORT") ?? "8080";
+    builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
+}
 
 
 

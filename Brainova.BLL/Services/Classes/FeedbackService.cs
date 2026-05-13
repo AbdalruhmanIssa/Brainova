@@ -13,10 +13,12 @@ namespace Brainova.BLL.Services.Classes
     public class FeedbackService : IFeedbackService
     {
         private readonly IUnitOfWork _uow;
+        private readonly INotificationService _notifications;
 
-        public FeedbackService(IUnitOfWork uow)
+        public FeedbackService(IUnitOfWork uow, INotificationService notifications)
         {
             _uow = uow;
+            _notifications = notifications;
         }
 
         public async Task<string> AddAsync(string supervisorId, Guid reportId, CreateFeedbackRequest request)
@@ -78,6 +80,51 @@ namespace Brainova.BLL.Services.Classes
             _uow.Repo<MriCase>().Update(report.Case);
 
             await _uow.SaveChangesAsync();
+
+            // -----------------------------------------------------------
+            // Real-time push (SignalR): notify the student that a new
+            // feedback has arrived. Done AFTER the DB save succeeds so we
+            // never tell the student about a feedback that didn't persist.
+            // Wrapped in try/catch so a transient SignalR failure cannot
+            // bubble up and fail the HTTP request — the feedback is saved
+            // either way and the student can still see it via REST.
+            // -----------------------------------------------------------
+            try
+            {
+                var supervisorName = await _uow.Repo<ApplicationUser>()
+                    .Query()
+                    .Where(u => u.Id == supervisorId)
+                    .Select(u => u.FullName)
+                    .FirstOrDefaultAsync();
+
+                var unseenCount = await _uow.Repo<Feedback>()
+                    .Query()
+                    .CountAsync(f => f.StudentId == report.StudentId && !f.IsSeen);
+
+                var tz = TimeZoneInfo.FindSystemTimeZoneById("Asia/Hebron");
+
+                var payload = new StudentFeedbackNotificationResponse
+                {
+                    FeedbackId = feedback.Id,
+                    ReportId = report.Id,
+                    ReportCode = report.ReportCode,
+                    CaseId = report.CaseId,
+                    SupervisorId = supervisorId,
+                    SupervisorName = supervisorName,
+                    Comment = feedback.Comment,
+                    CreatedAt = TimeZoneInfo.ConvertTimeFromUtc(feedback.CreatedAt, tz),
+                    IsSeen = feedback.IsSeen
+                };
+
+                await _notifications.NotifyStudentNewFeedbackAsync(
+                    report.StudentId,
+                    payload,
+                    unseenCount);
+            }
+            catch
+            {
+                // Swallow: notification is best-effort, the feedback is saved.
+            }
 
             return "Feedback added successfully";
         }
@@ -506,6 +553,50 @@ GetUnseenForStudentAsync(string studentId, CancellationToken ct = default)
             if (updated is null)
                 throw new NotFoundException("Feedback not found");
 
+            // -----------------------------------------------------------
+            // Real-time push: notify the student that the feedback they
+            // received has been edited. Since UpdateAsync also flips IsSeen
+            // back to false, the unseen count goes up — we send both pieces
+            // so the bell badge and any open feedback view stay in sync.
+            // -----------------------------------------------------------
+            try
+            {
+                var report = await _uow.Repo<Report>()
+                    .Query()
+                    .Where(r => r.Id == feedback.ReportId)
+                    .Select(r => new { r.ReportCode, r.CaseId })
+                    .FirstOrDefaultAsync(ct);
+
+                var unseenCount = await _uow.Repo<Feedback>()
+                    .Query()
+                    .CountAsync(f => f.StudentId == feedback.StudentId && !f.IsSeen, ct);
+
+                var tz = TimeZoneInfo.FindSystemTimeZoneById("Asia/Hebron");
+
+                var payload = new StudentFeedbackNotificationResponse
+                {
+                    FeedbackId = feedback.Id,
+                    ReportId = feedback.ReportId,
+                    ReportCode = report?.ReportCode,
+                    CaseId = report?.CaseId ?? Guid.Empty,
+                    SupervisorId = feedback.SupervisorId,
+                    SupervisorName = updated.SupervisorName,
+                    Comment = feedback.Comment,
+                    CreatedAt = TimeZoneInfo.ConvertTimeFromUtc(feedback.CreatedAt, tz),
+                    IsSeen = feedback.IsSeen
+                };
+
+                await _notifications.NotifyStudentFeedbackUpdatedAsync(
+                    feedback.StudentId,
+                    payload,
+                    unseenCount,
+                    ct);
+            }
+            catch
+            {
+                // Best-effort.
+            }
+
             return updated;
         }
         public async Task<string> DeleteAsync(
@@ -534,12 +625,41 @@ GetUnseenForStudentAsync(string studentId, CancellationToken ct = default)
             if (report is null)
                 throw new NotFoundException("Related report not found");
 
+            // Capture identifiers BEFORE removal so we can still push after save.
+            var studentId = feedback.StudentId;
+            var removedFeedbackId = feedback.Id;
+            var removedReportId = feedback.ReportId;
+
             _uow.Repo<Feedback>().Remove(feedback);
 
             report.Case.Status = CaseStatus.Predicted;
             _uow.Repo<MriCase>().Update(report.Case);
 
             await _uow.SaveChangesAsync(ct);
+
+            // -----------------------------------------------------------
+            // Real-time push: tell the student the feedback was deleted
+            // so any open menu/list can remove it immediately. We also
+            // send a fresh unseen count since deleting an unseen feedback
+            // would lower it.
+            // -----------------------------------------------------------
+            try
+            {
+                var unseenCount = await _uow.Repo<Feedback>()
+                    .Query()
+                    .CountAsync(f => f.StudentId == studentId && !f.IsSeen, ct);
+
+                await _notifications.NotifyStudentFeedbackDeletedAsync(
+                    studentId,
+                    removedFeedbackId,
+                    removedReportId,
+                    unseenCount,
+                    ct);
+            }
+            catch
+            {
+                // Best-effort.
+            }
 
             return "Feedback deleted successfully";
         }

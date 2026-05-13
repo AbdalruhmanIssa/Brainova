@@ -20,6 +20,7 @@ namespace Brainova.BLL.Services.Classes
         private readonly IUnitOfWork _uow;
         private readonly IHttpContextAccessor _httpContextAccessor;
         private readonly IReportQuestionService _reportQuestionService;
+        private readonly INotificationService _notifications;
 
 
         public UserService(
@@ -28,7 +29,8 @@ namespace Brainova.BLL.Services.Classes
             IEmailSender emailSender,
             IUnitOfWork uow,
             IHttpContextAccessor httpContextAccessor,
-            IReportQuestionService reportQuestionService)
+            IReportQuestionService reportQuestionService,
+            INotificationService notifications)
         {
             _userRepository = userRepository;
             _userManager = userManager;
@@ -36,6 +38,7 @@ namespace Brainova.BLL.Services.Classes
             _uow = uow;
             _httpContextAccessor = httpContextAccessor;
             _reportQuestionService = reportQuestionService;
+            _notifications = notifications;
         }
         //GET
 
@@ -177,7 +180,33 @@ public async Task<List<SupervisorStudentListItemResponse>> GetSupervisorStudents
 
         //Block/Unblock
 
-        public Task<bool> BlockUserAsync(string userId) => _userRepository.BlockUserAsync(userId);
+        public async Task<bool> BlockUserAsync(string userId)
+        {
+            var success = await _userRepository.BlockUserAsync(userId);
+
+            // -----------------------------------------------------------
+            // Real-time push (SignalR): tell the user they've just been
+            // blocked so the frontend can force-logout immediately.
+            // Without this, their JWT is still valid for up to an hour
+            // and they could keep using the app until next refresh.
+            //
+            // Best-effort: a notification failure must not roll back the
+            // block — the user IS blocked in the DB regardless.
+            // -----------------------------------------------------------
+            if (success)
+            {
+                try
+                {
+                    await _notifications.NotifyUserBlockedAsync(userId);
+                }
+                catch
+                {
+                    // Best-effort.
+                }
+            }
+
+            return success;
+        }
         public Task<bool> UnBlockUserAsync(string userId) => _userRepository.UnBlockUserAsync(userId);
         public Task<bool> IsBlockedAsync(string userId) => _userRepository.IsBlockedAsync(userId);
 

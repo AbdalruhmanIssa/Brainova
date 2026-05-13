@@ -1,4 +1,5 @@
 using Brainova.BLL.Exceptions;
+using Brainova.BLL.Hubs;
 using Brainova.BLL.Services.Classes;
 using Brainova.BLL.Services.Interface;
 using Brainova.DAL.Data;
@@ -11,6 +12,7 @@ using Brainova.PL.uti;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.UI.Services;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.ML.OnnxRuntime;
@@ -49,6 +51,14 @@ builder.Services.AddScoped<IReportPdfService, ReportPdfService>();
 builder.Services.AddScoped<ISeedData, SeedData>();
 builder.Services.AddScoped<IFeedbackService, FeedbackService>();
 builder.Services.AddScoped<IDashboardService, DashboardService>();
+
+// ==============================
+// SignalR (real-time notifications)
+// ==============================
+builder.Services.AddSignalR();
+builder.Services.AddScoped<INotificationService, NotificationService>();
+// Maps the JWT "Id" claim -> SignalR user id, so Clients.User(userId) works.
+builder.Services.AddSingleton<IUserIdProvider, JwtIdUserIdProvider>();
 // Register ONNX session as Singleton (heavy object)
 //builder.Services.AddSingleton(sp =>
 //{
@@ -71,13 +81,17 @@ builder.Services.AddHttpClient("GradCamClient", client =>
 });
 
 // 3) CORS Configuration
+// NOTE: SignalR WebSockets require AllowCredentials(), and AllowCredentials
+// is not allowed together with AllowAnyOrigin(). Using SetIsOriginAllowed
+// keeps the "allow any origin" behavior while still permitting credentials.
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowFrontend", policy =>
         policy
-            .AllowAnyOrigin()
+            .SetIsOriginAllowed(_ => true)
             .AllowAnyHeader()
             .AllowAnyMethod()
+            .AllowCredentials()
     );
 });
 // Database configuration - read from environment variables or appsettings
@@ -145,6 +159,25 @@ builder.Services
             // IMPORTANT: because you add roles as new Claim("Role", role)
             RoleClaimType = "Role"
         };
+
+        // SignalR sends the JWT as a query-string parameter on the WebSocket
+        // upgrade request because browsers can't set the Authorization header
+        // for WS. We only honor it for hub paths so regular APIs are unaffected.
+        options.Events = new JwtBearerEvents
+        {
+            OnMessageReceived = context =>
+            {
+                var accessToken = context.Request.Query["access_token"];
+                var path = context.HttpContext.Request.Path;
+
+                if (!string.IsNullOrEmpty(accessToken) &&
+                    path.StartsWithSegments("/hubs"))
+                {
+                    context.Token = accessToken;
+                }
+                return Task.CompletedTask;
+            }
+        };
     });
 
 builder.Services.AddAuthorization();
@@ -186,5 +219,6 @@ if (!app.Environment.IsDevelopment())
 app.UseAuthorization();
 
 app.MapControllers();
+app.MapHub<NotificationHub>("/hubs/notifications");
 
 app.Run();

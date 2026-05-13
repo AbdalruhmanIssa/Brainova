@@ -17,10 +17,12 @@ namespace Brainova.BLL.Services.Classes
     public class ReportService : IReportService
     {
         private readonly IUnitOfWork _uow;
+        private readonly INotificationService _notifications;
 
-        public ReportService(IUnitOfWork uow)
+        public ReportService(IUnitOfWork uow, INotificationService notifications)
         {
             _uow = uow;
+            _notifications = notifications;
         }
 
         public async Task<Guid> SubmitAsync(string studentId, SubmitReportRequest req)
@@ -149,6 +151,34 @@ namespace Brainova.BLL.Services.Classes
 
                 await _uow.SaveChangesAsync(); // second save
                 await transaction.CommitAsync();
+
+                // -----------------------------------------------------------
+                // Real-time push (SignalR): notify the supervisor that this
+                // student just submitted a new report for review. Best-effort,
+                // wrapped so SignalR failures never break the API response.
+                // -----------------------------------------------------------
+                try
+                {
+                    var tz = TimeZoneInfo.FindSystemTimeZoneById("Asia/Hebron");
+
+                    var payload = new SupervisorNewReportResponse
+                    {
+                        ReportId = report.Id,
+                        ReportCode = report.ReportCode,
+                        CaseId = report.CaseId,
+                        SubmittedAt = TimeZoneInfo.ConvertTimeFromUtc(report.SubmittedAt, tz),
+                        StudentId = studentId,
+                        StudentName = student.FullName
+                    };
+
+                    await _notifications.NotifySupervisorNewReportAsync(
+                        student.SupervisorUserId!,
+                        payload);
+                }
+                catch
+                {
+                    // Notification is best-effort. The report is already saved.
+                }
 
                 return report.Id;
             }

@@ -160,27 +160,57 @@ builder.Services
             RoleClaimType = "Role"
         };
 
-        // SignalR sends the JWT as a query-string parameter on the WebSocket
-        // upgrade request because browsers can't set the Authorization header
-        // for WS. We only honor it for hub paths so regular APIs are unaffected.
+        // Token resolution order:
+        //   1) Authorization: Bearer ... header (default JwtBearer behavior)
+        //   2) For SignalR hub paths only, the ?access_token=... query string
+        //   3) HttpOnly "access_token" cookie set by /cookie-login
+        // If none are present the default behavior applies (401).
         options.Events = new JwtBearerEvents
         {
             OnMessageReceived = context =>
             {
-                var accessToken = context.Request.Query["access_token"];
                 var path = context.HttpContext.Request.Path;
 
+                // SignalR: WebSocket upgrade can't set Authorization header
+                var accessToken = context.Request.Query["access_token"];
                 if (!string.IsNullOrEmpty(accessToken) &&
                     path.StartsWithSegments("/hubs"))
                 {
                     context.Token = accessToken;
+                    return Task.CompletedTask;
                 }
+
+                // Cookie fallback: only used when no Authorization header was sent.
+                if (string.IsNullOrEmpty(context.Token))
+                {
+                    var cookieToken = context.Request.Cookies["access_token"];
+                    if (!string.IsNullOrEmpty(cookieToken))
+                    {
+                        context.Token = cookieToken;
+                    }
+                }
+
                 return Task.CompletedTask;
             }
         };
     });
 
 builder.Services.AddAuthorization();
+
+// ==============================
+// Antiforgery (CSRF) — only enforced for cookie-authenticated requests.
+// Frontend reads the XSRF-TOKEN cookie and echoes it as the X-XSRF-TOKEN header.
+// ==============================
+builder.Services.AddAntiforgery(options =>
+{
+    options.HeaderName = "X-XSRF-TOKEN";
+    options.Cookie.Name = "XSRF-TOKEN";
+    options.Cookie.HttpOnly = false; // must be readable by the SPA's JS
+    options.Cookie.SameSite = SameSiteMode.None;
+    options.Cookie.SecurePolicy = builder.Environment.IsDevelopment()
+        ? CookieSecurePolicy.None
+        : CookieSecurePolicy.Always;
+});
 
 builder.Services.AddHttpContextAccessor();
 // Add services to the container.
@@ -215,6 +245,55 @@ if (!app.Environment.IsDevelopment())
 {
     app.UseHttpsRedirection();
 }
+
+// ==============================
+// CSRF: validate antiforgery token ONLY for cookie-authenticated, state-changing requests.
+// Bearer-token requests are exempt (CSRF does not apply when the credential isn't auto-sent).
+// Safe methods (GET/HEAD/OPTIONS/TRACE) are exempt.
+// ==============================
+var antiforgery = app.Services.GetRequiredService<Microsoft.AspNetCore.Antiforgery.IAntiforgery>();
+app.Use(async (context, next) =>
+{
+    var method = context.Request.Method;
+    var isStateChanging = HttpMethods.IsPost(method)
+                          || HttpMethods.IsPut(method)
+                          || HttpMethods.IsPatch(method)
+                          || HttpMethods.IsDelete(method);
+
+    // Only enforce CSRF when the caller relied on the auth cookie.
+    // If they sent an Authorization header, there's no CSRF risk.
+    var usedCookieAuth = context.Request.Cookies.ContainsKey("access_token")
+                         && !context.Request.Headers.ContainsKey("Authorization");
+
+    // Exempt the login/logout/csrf-token endpoints themselves — the user can't have
+    // a valid CSRF token before they've logged in.
+    var path = context.Request.Path.Value ?? string.Empty;
+    var isAuthEndpoint = path.StartsWith("/api/Identity/Auths/cookie-login", StringComparison.OrdinalIgnoreCase)
+                         || path.StartsWith("/api/Identity/Auths/login", StringComparison.OrdinalIgnoreCase)
+                         || path.StartsWith("/api/Identity/Auths/logout", StringComparison.OrdinalIgnoreCase)
+                         || path.StartsWith("/api/Identity/Auths/csrf-token", StringComparison.OrdinalIgnoreCase)
+                         || path.StartsWith("/api/Identity/Auths/register-student", StringComparison.OrdinalIgnoreCase)
+                         || path.StartsWith("/api/Identity/Auths/forgot-password", StringComparison.OrdinalIgnoreCase)
+                         || path.StartsWith("/api/Identity/Auths/reset-password", StringComparison.OrdinalIgnoreCase)
+                         || path.StartsWith("/api/Identity/Auths/set-password", StringComparison.OrdinalIgnoreCase)
+                         || path.StartsWith("/api/Identity/Auths/confirm-email", StringComparison.OrdinalIgnoreCase);
+
+    if (isStateChanging && usedCookieAuth && !isAuthEndpoint)
+    {
+        try
+        {
+            await antiforgery.ValidateRequestAsync(context);
+        }
+        catch (Microsoft.AspNetCore.Antiforgery.AntiforgeryValidationException)
+        {
+            context.Response.StatusCode = StatusCodes.Status400BadRequest;
+            await context.Response.WriteAsJsonAsync(new { error = "Invalid or missing CSRF token (X-XSRF-TOKEN)." });
+            return;
+        }
+    }
+
+    await next();
+});
 
 app.UseAuthorization();
 

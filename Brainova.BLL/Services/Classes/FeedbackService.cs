@@ -409,10 +409,30 @@ GetUnseenForStudentAsync(string studentId, CancellationToken ct = default)
             if (feedback is null)
                 throw new NotFoundException("Feedback not found");
 
-            if (!feedback.IsSeen)
+            // Skip the push if nothing actually changed — the count is the same.
+            if (feedback.IsSeen) return;
+
+            feedback.IsSeen = true;
+            await _uow.SaveChangesAsync(ct);
+
+            // -----------------------------------------------------------
+            // Real-time push: keep other tabs/devices of this student in
+            // sync so the bell badge drops without manual refresh.
+            // -----------------------------------------------------------
+            try
             {
-                feedback.IsSeen = true;
-                await _uow.SaveChangesAsync(ct);
+                var unseenCount = await _uow.Repo<Feedback>()
+                    .Query()
+                    .CountAsync(f => f.StudentId == studentId && !f.IsSeen, ct);
+
+                await _notifications.NotifyStudentUnseenCountAsync(
+                    studentId,
+                    unseenCount,
+                    ct);
+            }
+            catch
+            {
+                // Best-effort.
             }
         }
         public async Task MarkAllSeenForStudentAsync(
@@ -431,6 +451,22 @@ GetUnseenForStudentAsync(string studentId, CancellationToken ct = default)
                 feedback.IsSeen = true;
 
             await _uow.SaveChangesAsync(ct);
+
+            // -----------------------------------------------------------
+            // Real-time push: unseen count is now zero — broadcast it so
+            // every open device of this student clears the bell badge.
+            // -----------------------------------------------------------
+            try
+            {
+                await _notifications.NotifyStudentUnseenCountAsync(
+                    studentId,
+                    unseenCount: 0,
+                    ct);
+            }
+            catch
+            {
+                // Best-effort.
+            }
         }
         public async Task<(int TotalCount, List<FeedbackResponse> Items)> GetAllForSupervisorAsync(
     string supervisorId,

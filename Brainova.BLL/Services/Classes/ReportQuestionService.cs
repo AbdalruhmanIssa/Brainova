@@ -14,11 +14,43 @@ namespace Brainova.BLL.Services.Classes
     {
         private readonly IUnitOfWork _uow;
         private readonly UserManager<ApplicationUser> _userManager;
+        private readonly INotificationService _notifications;
 
-        public ReportQuestionService(IUnitOfWork uow, UserManager<ApplicationUser> userManager)
+        public ReportQuestionService(
+            IUnitOfWork uow,
+            UserManager<ApplicationUser> userManager,
+            INotificationService notifications)
         {
             _uow = uow;
             _userManager = userManager;
+            _notifications = notifications;
+        }
+
+        /// <summary>
+        /// Real-time push helper: notify every student of this supervisor that the
+        /// question set changed. Used by Add/Update/ToggleActive so students with
+        /// an open "Submit Report" page can re-fetch the questions list.
+        /// Best-effort — wrapped so SignalR failures never break the API.
+        /// </summary>
+        private async Task PushQuestionsChangedAsync(string supervisorId, CancellationToken ct = default)
+        {
+            try
+            {
+                var studentIds = await _uow.Repo<ApplicationUser>()
+                    .Query()
+                    .Where(u => u.SupervisorUserId == supervisorId)
+                    .Select(u => u.Id)
+                    .ToListAsync(ct);
+
+                if (studentIds.Count > 0)
+                {
+                    await _notifications.NotifyStudentsQuestionsChangedAsync(studentIds, ct);
+                }
+            }
+            catch
+            {
+                // Best-effort.
+            }
         }
 
         public async Task AddAsync(string supervisorId, CreateReportQuestionRequest req)
@@ -64,6 +96,8 @@ namespace Brainova.BLL.Services.Classes
 
             await repo.AddAsync(q);
             await _uow.SaveChangesAsync();
+
+            await PushQuestionsChangedAsync(supervisorId);
         }
 
         public async Task<List<ReportQuestion>> GetActiveForStudentAsync(string studentId)
@@ -148,6 +182,8 @@ namespace Brainova.BLL.Services.Classes
 
             repo.Update(question);
             await _uow.SaveChangesAsync();
+
+            await PushQuestionsChangedAsync(supervisorId);
         }
 
         public async Task ToggleActiveAsync(string supervisorId, Guid id)
@@ -168,6 +204,8 @@ namespace Brainova.BLL.Services.Classes
             question.IsActive = !question.IsActive;
             repo.Update(question);
             await _uow.SaveChangesAsync();
+
+            await PushQuestionsChangedAsync(supervisorId);
         }
 
         private async Task EnsureSupervisorExists(string supervisorId)

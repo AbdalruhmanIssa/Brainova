@@ -12,18 +12,34 @@ namespace Brainova.BLL.Hubs
     [Authorize]
     public class NotificationHub : Hub
     {
+        // Group name prefix for role-targeted broadcasts.
+        // Use RoleGroup("Admin") / RoleGroup("SuperAdmin") etc. from NotificationService
+        // to push to every connection that authenticated with that role.
+        public const string RoleGroupPrefix = "role:";
+        public static string RoleGroup(string role) => $"{RoleGroupPrefix}{role}";
+
         // No client-callable methods are needed for the feedback use case:
         // the server pushes; the client only listens.
         //
-        // Lifecycle hooks are kept for future debugging / presence tracking.
-        public override Task OnConnectedAsync()
+        // On connect we add the connection to a group keyed by the user's role
+        // (read from the JWT "Role" claim — same claim type configured in Program.cs).
+        // This lets the server broadcast to e.g. "all admins" without having to
+        // maintain a list of user ids.
+        public override async Task OnConnectedAsync()
         {
-            return base.OnConnectedAsync();
+            var role = Context.User?.FindFirst("Role")?.Value;
+            if (!string.IsNullOrWhiteSpace(role))
+            {
+                await Groups.AddToGroupAsync(Context.ConnectionId, RoleGroup(role));
+            }
+            await base.OnConnectedAsync();
         }
 
-        public override Task OnDisconnectedAsync(Exception? exception)
+        public override async Task OnDisconnectedAsync(Exception? exception)
         {
-            return base.OnDisconnectedAsync(exception);
+            // SignalR removes the connection from groups automatically when it
+            // disconnects, so we don't need to clean up manually.
+            await base.OnDisconnectedAsync(exception);
         }
     }
 

@@ -1,3 +1,4 @@
+using Brainova.BLL.DTOs.Realtime;
 using Brainova.BLL.DTOs.Response;
 using Brainova.BLL.DTOs.Response.Report;
 using Brainova.BLL.Hubs;
@@ -114,6 +115,89 @@ namespace Brainova.BLL.Services.Classes
                 "AccountBlocked",
                 new { message = "Your account has been blocked." },
                 ct);
+        }
+
+        public Task NotifyUserUnblockedAsync(
+            string userId,
+            CancellationToken ct = default)
+        {
+            if (string.IsNullOrWhiteSpace(userId)) return Task.CompletedTask;
+
+            return _hub.Clients.User(userId).SendAsync(
+                "AccountUnblocked",
+                new { message = "Your account has been unblocked." },
+                ct);
+        }
+
+        public Task NotifyUserRoleChangedAsync(
+            string userId,
+            string? oldRole,
+            string newRole,
+            CancellationToken ct = default)
+        {
+            if (string.IsNullOrWhiteSpace(userId)) return Task.CompletedTask;
+
+            return _hub.Clients.User(userId).SendAsync(
+                "RoleChanged",
+                new { oldRole, newRole },
+                ct);
+        }
+
+        public Task NotifyUserUpdatedAsync(
+            string userId,
+            CancellationToken ct = default)
+        {
+            if (string.IsNullOrWhiteSpace(userId)) return Task.CompletedTask;
+
+            return _hub.Clients.User(userId).SendAsync(
+                "UserUpdated",
+                new { userId },
+                ct);
+        }
+
+        public Task NotifyStudentsQuestionsChangedAsync(
+            IEnumerable<string> studentIds,
+            CancellationToken ct = default)
+        {
+            if (studentIds == null) return Task.CompletedTask;
+
+            var ids = studentIds
+                .Where(id => !string.IsNullOrWhiteSpace(id))
+                .Distinct()
+                .ToList();
+
+            if (ids.Count == 0) return Task.CompletedTask;
+
+            return _hub.Clients.Users(ids).SendAsync(
+                "QuestionsChanged",
+                new { },
+                ct);
+        }
+
+        public Task NotifySupervisorStudentsChangedAsync(
+            string supervisorId,
+            CancellationToken ct = default)
+        {
+            if (string.IsNullOrWhiteSpace(supervisorId)) return Task.CompletedTask;
+
+            return _hub.Clients.User(supervisorId).SendAsync(
+                "StudentsChanged",
+                new { },
+                ct);
+        }
+
+        public Task NotifyAdminsUserListChangedAsync(
+            UserListChangePayload payload,
+            CancellationToken ct = default)
+        {
+            if (payload == null) return Task.CompletedTask;
+
+            // Push to both admin role groups (Admin and SuperAdmin).
+            // Connections joined these groups in NotificationHub.OnConnectedAsync.
+            return _hub.Clients.Groups(
+                NotificationHub.RoleGroup("Admin"),
+                NotificationHub.RoleGroup("SuperAdmin")
+            ).SendAsync("UserListChanged", payload, ct);
         }
     }
 }

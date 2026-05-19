@@ -1,3 +1,4 @@
+using Brainova.BLL.DTOs.Realtime;
 using Brainova.BLL.DTOs.Response;
 using Brainova.BLL.DTOs.Response.Report;
 
@@ -70,6 +71,70 @@ namespace Brainova.BLL.Services.Interface
         /// </summary>
         Task NotifyUserBlockedAsync(
             string userId,
+            CancellationToken ct = default);
+
+        /// <summary>
+        /// Notify a user that their account has been unblocked.
+        /// Mostly informational — they were already logged out by the block,
+        /// so the next login uses the unblocked state. Sent for symmetry and
+        /// so any open "user list" admin views can refresh.
+        /// Client event name: <c>"AccountUnblocked"</c>.
+        /// </summary>
+        Task NotifyUserUnblockedAsync(
+            string userId,
+            CancellationToken ct = default);
+
+        /// <summary>
+        /// Notify a user that their role was changed by an admin. The frontend
+        /// should re-fetch the user object and re-route them to the dashboard
+        /// matching the new role.
+        /// Client event name: <c>"RoleChanged"</c>.
+        /// </summary>
+        Task NotifyUserRoleChangedAsync(
+            string userId,
+            string? oldRole,
+            string newRole,
+            CancellationToken ct = default);
+
+        /// <summary>
+        /// Notify a user that their profile was edited by an admin. The frontend
+        /// should re-fetch the user object so any open profile/header info is fresh.
+        /// Client event name: <c>"UserUpdated"</c>.
+        /// </summary>
+        Task NotifyUserUpdatedAsync(
+            string userId,
+            CancellationToken ct = default);
+
+        /// <summary>
+        /// Notify a list of students that their supervisor's question set changed.
+        /// Frontend should invalidate the "GET /Student/Reports/questions" query.
+        /// Caller pre-resolves student IDs (we keep this service dumb of DAL).
+        /// Client event name: <c>"QuestionsChanged"</c>.
+        /// </summary>
+        Task NotifyStudentsQuestionsChangedAsync(
+            IEnumerable<string> studentIds,
+            CancellationToken ct = default);
+
+        /// <summary>
+        /// Notify a supervisor that their student roster changed
+        /// (student assigned to them, removed from them, deleted, blocked, etc.).
+        /// Frontend invalidates the supervisor's "my students" and case-list queries.
+        /// Client event name: <c>"StudentsChanged"</c>.
+        /// </summary>
+        Task NotifySupervisorStudentsChangedAsync(
+            string supervisorId,
+            CancellationToken ct = default);
+
+        /// <summary>
+        /// Broadcast to admins + super-admins that the user list changed
+        /// (created / deleted / blocked / unblocked / role-changed / edited).
+        /// Payload carries <c>kind</c>, the affected user's id (+ optional name/role),
+        /// and the acting admin's id so the frontend can show contextual toasts
+        /// and/or selectively patch its cache instead of refetching the whole list.
+        /// Client event name: <c>"UserListChanged"</c>.
+        /// </summary>
+        Task NotifyAdminsUserListChangedAsync(
+            UserListChangePayload payload,
             CancellationToken ct = default);
     }
 }

@@ -247,53 +247,50 @@ if (!app.Environment.IsDevelopment())
 }
 
 // ==============================
-// CSRF: validate antiforgery token ONLY for cookie-authenticated, state-changing requests.
-// Bearer-token requests are exempt (CSRF does not apply when the credential isn't auto-sent).
-// Safe methods (GET/HEAD/OPTIONS/TRACE) are exempt.
+// CSRF middleware DISABLED for now. The double-submit cookie pattern doesn't work
+// cleanly cross-origin (frontend can't read the XSRF-TOKEN cookie set by the API
+// domain), and we've decided to postpone CSRF hardening. Re-enable later by
+// uncommenting this block.
 // ==============================
-var antiforgery = app.Services.GetRequiredService<Microsoft.AspNetCore.Antiforgery.IAntiforgery>();
-app.Use(async (context, next) =>
-{
-    var method = context.Request.Method;
-    var isStateChanging = HttpMethods.IsPost(method)
-                          || HttpMethods.IsPut(method)
-                          || HttpMethods.IsPatch(method)
-                          || HttpMethods.IsDelete(method);
-
-    // Only enforce CSRF when the caller relied on the auth cookie.
-    // If they sent an Authorization header, there's no CSRF risk.
-    var usedCookieAuth = context.Request.Cookies.ContainsKey("access_token")
-                         && !context.Request.Headers.ContainsKey("Authorization");
-
-    // Exempt the login/logout/csrf-token endpoints themselves — the user can't have
-    // a valid CSRF token before they've logged in.
-    var path = context.Request.Path.Value ?? string.Empty;
-    var isAuthEndpoint = path.StartsWith("/api/Identity/Auths/cookie-login", StringComparison.OrdinalIgnoreCase)
-                         || path.StartsWith("/api/Identity/Auths/login", StringComparison.OrdinalIgnoreCase)
-                         || path.StartsWith("/api/Identity/Auths/logout", StringComparison.OrdinalIgnoreCase)
-                         || path.StartsWith("/api/Identity/Auths/csrf-token", StringComparison.OrdinalIgnoreCase)
-                         || path.StartsWith("/api/Identity/Auths/register-student", StringComparison.OrdinalIgnoreCase)
-                         || path.StartsWith("/api/Identity/Auths/forgot-password", StringComparison.OrdinalIgnoreCase)
-                         || path.StartsWith("/api/Identity/Auths/reset-password", StringComparison.OrdinalIgnoreCase)
-                         || path.StartsWith("/api/Identity/Auths/set-password", StringComparison.OrdinalIgnoreCase)
-                         || path.StartsWith("/api/Identity/Auths/confirm-email", StringComparison.OrdinalIgnoreCase);
-
-    if (isStateChanging && usedCookieAuth && !isAuthEndpoint)
-    {
-        try
-        {
-            await antiforgery.ValidateRequestAsync(context);
-        }
-        catch (Microsoft.AspNetCore.Antiforgery.AntiforgeryValidationException)
-        {
-            context.Response.StatusCode = StatusCodes.Status400BadRequest;
-            await context.Response.WriteAsJsonAsync(new { error = "Invalid or missing CSRF token (X-XSRF-TOKEN)." });
-            return;
-        }
-    }
-
-    await next();
-});
+//var antiforgery = app.Services.GetRequiredService<Microsoft.AspNetCore.Antiforgery.IAntiforgery>();
+//app.Use(async (context, next) =>
+//{
+//    var method = context.Request.Method;
+//    var isStateChanging = HttpMethods.IsPost(method)
+//                          || HttpMethods.IsPut(method)
+//                          || HttpMethods.IsPatch(method)
+//                          || HttpMethods.IsDelete(method);
+//
+//    var usedCookieAuth = context.Request.Cookies.ContainsKey("access_token")
+//                         && !context.Request.Headers.ContainsKey("Authorization");
+//
+//    var path = context.Request.Path.Value ?? string.Empty;
+//    var isAuthEndpoint = path.StartsWith("/api/Identity/Auths/cookie-login", StringComparison.OrdinalIgnoreCase)
+//                         || path.StartsWith("/api/Identity/Auths/login", StringComparison.OrdinalIgnoreCase)
+//                         || path.StartsWith("/api/Identity/Auths/logout", StringComparison.OrdinalIgnoreCase)
+//                         || path.StartsWith("/api/Identity/Auths/csrf-token", StringComparison.OrdinalIgnoreCase)
+//                         || path.StartsWith("/api/Identity/Auths/register-student", StringComparison.OrdinalIgnoreCase)
+//                         || path.StartsWith("/api/Identity/Auths/forgot-password", StringComparison.OrdinalIgnoreCase)
+//                         || path.StartsWith("/api/Identity/Auths/reset-password", StringComparison.OrdinalIgnoreCase)
+//                         || path.StartsWith("/api/Identity/Auths/set-password", StringComparison.OrdinalIgnoreCase)
+//                         || path.StartsWith("/api/Identity/Auths/confirm-email", StringComparison.OrdinalIgnoreCase);
+//
+//    if (isStateChanging && usedCookieAuth && !isAuthEndpoint)
+//    {
+//        try
+//        {
+//            await antiforgery.ValidateRequestAsync(context);
+//        }
+//        catch (Microsoft.AspNetCore.Antiforgery.AntiforgeryValidationException)
+//        {
+//            context.Response.StatusCode = StatusCodes.Status400BadRequest;
+//            await context.Response.WriteAsJsonAsync(new { error = "Invalid or missing CSRF token (X-XSRF-TOKEN)." });
+//            return;
+//        }
+//    }
+//
+//    await next();
+//});
 
 app.UseAuthorization();
 

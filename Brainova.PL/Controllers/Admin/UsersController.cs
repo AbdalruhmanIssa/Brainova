@@ -88,9 +88,9 @@ namespace Brainova.PL.Controllers.Admin
             var list = await _userService.GetSupervisorsAsync();
             return Ok(list);
         }
-      
 
-      
+
+   
         [HttpPut("update/{userId}")]
         public async Task<IActionResult> UpdateUser(string userId, UpdateUserRequest request)
         {

@@ -1,4 +1,5 @@
 ﻿using Brainova.BLL.DTOs.Auth;
+using Brainova.BLL.DTOs.Realtime;
 using Brainova.BLL.DTOs.Response;
 using Brainova.BLL.DTOs.User;
 using Brainova.BLL.Exceptions;
@@ -40,6 +41,14 @@ namespace Brainova.BLL.Services.Classes
             _reportQuestionService = reportQuestionService;
             _notifications = notifications;
         }
+        /// <summary>
+        /// Returns the id of the admin/super-admin currently performing the
+        /// request (or null if none — e.g. background flows). Used to enrich
+        /// the "UserListChanged" SignalR payload with "byUserId".
+        /// </summary>
+        private string? GetActingUserId()
+            => _httpContextAccessor.HttpContext?.User?.FindFirst("Id")?.Value;
+
         //GET
 
         public async Task<List<UserDTO>> GetAllAsync()
@@ -185,10 +194,9 @@ public async Task<List<SupervisorStudentListItemResponse>> GetSupervisorStudents
             var success = await _userRepository.BlockUserAsync(userId);
 
             // -----------------------------------------------------------
-            // Real-time push (SignalR): tell the user they've just been
-            // blocked so the frontend can force-logout immediately.
-            // Without this, their JWT is still valid for up to an hour
-            // and they could keep using the app until next refresh.
+            // Real-time pushes (SignalR):
+            //  1. Tell the user they've just been blocked → frontend force-logouts.
+            //  2. Tell admins → the user-management table updates live.
             //
             // Best-effort: a notification failure must not roll back the
             // block — the user IS blocked in the DB regardless.
@@ -198,6 +206,12 @@ public async Task<List<SupervisorStudentListItemResponse>> GetSupervisorStudents
                 try
                 {
                     await _notifications.NotifyUserBlockedAsync(userId);
+                    await _notifications.NotifyAdminsUserListChangedAsync(new UserListChangePayload
+                    {
+                        Kind = UserListChangeKinds.Blocked,
+                        UserId = userId,
+                        ByUserId = GetActingUserId()
+                    });
                 }
                 catch
                 {
@@ -207,7 +221,34 @@ public async Task<List<SupervisorStudentListItemResponse>> GetSupervisorStudents
 
             return success;
         }
-        public Task<bool> UnBlockUserAsync(string userId) => _userRepository.UnBlockUserAsync(userId);
+        public async Task<bool> UnBlockUserAsync(string userId)
+        {
+            var success = await _userRepository.UnBlockUserAsync(userId);
+
+            // Symmetric with BlockUserAsync. The unblocked user is most
+            // likely logged out already, so AccountUnblocked is informational
+            // for any future-tab scenarios. UserListChanged refreshes the
+            // admin's user-management table either way.
+            if (success)
+            {
+                try
+                {
+                    await _notifications.NotifyUserUnblockedAsync(userId);
+                    await _notifications.NotifyAdminsUserListChangedAsync(new UserListChangePayload
+                    {
+                        Kind = UserListChangeKinds.Unblocked,
+                        UserId = userId,
+                        ByUserId = GetActingUserId()
+                    });
+                }
+                catch
+                {
+                    // Best-effort.
+                }
+            }
+
+            return success;
+        }
         public Task<bool> IsBlockedAsync(string userId) => _userRepository.IsBlockedAsync(userId);
 
         public Task<string> CreateSupervisorAsync(CreateUserRequest request, HttpRequest httpRequest)
@@ -280,6 +321,34 @@ public async Task<List<SupervisorStudentListItemResponse>> GetSupervisorStudents
                 $"<a href='{link}'>Set Password</a>"
             );
 
+            // Real-time push: broadcast to admins so their user-management
+            // table updates without manual refresh. If a Student was created
+            // and assigned to a supervisor, also tell that supervisor so their
+            // "my students" list gains the new row.
+            try
+            {
+                await _notifications.NotifyAdminsUserListChangedAsync(new UserListChangePayload
+                {
+                    Kind = UserListChangeKinds.Created,
+                    UserId = createdUser.Id,
+                    UserName = createdUser.UserName,
+                    FullName = createdUser.FullName,
+                    Role = roleName,
+                    ByUserId = GetActingUserId()
+                });
+
+                if (roleName == "Student" &&
+                    !string.IsNullOrWhiteSpace(createdUser.SupervisorUserId))
+                {
+                    await _notifications.NotifySupervisorStudentsChangedAsync(
+                        createdUser.SupervisorUserId);
+                }
+            }
+            catch
+            {
+                // Best-effort.
+            }
+
             return $"{roleName} created successfully. Set-password email sent.";
         }
 
@@ -330,6 +399,36 @@ public async Task<List<SupervisorStudentListItemResponse>> GetSupervisorStudents
                 $"<p><strong>Old Role:</strong> {result.OldRole ?? "None"}</p>" +
                 $"<p><strong>New Role:</strong> {request.RoleName}</p>"
             );
+
+            // -----------------------------------------------------------
+            // Real-time pushes:
+            //  1. Tell the affected user — frontend should re-fetch user +
+            //     re-route to the dashboard matching the new role.
+            //  2. Tell admins — the user list table / supervisor dropdown
+            //     should refresh.
+            // -----------------------------------------------------------
+            try
+            {
+                await _notifications.NotifyUserRoleChangedAsync(
+                    user.Id,
+                    result.OldRole,
+                    request.RoleName);
+
+                await _notifications.NotifyAdminsUserListChangedAsync(new UserListChangePayload
+                {
+                    Kind = UserListChangeKinds.RoleChanged,
+                    UserId = user.Id,
+                    UserName = user.UserName,
+                    FullName = user.FullName,
+                    Role = request.RoleName,
+                    OldRole = result.OldRole,
+                    ByUserId = GetActingUserId()
+                });
+            }
+            catch
+            {
+                // Best-effort.
+            }
 
             return new ChangeUserRoleResponse
             {
@@ -439,6 +538,10 @@ public async Task<List<SupervisorStudentListItemResponse>> GetSupervisorStudents
                 user.PhoneNumber = request.PhoneNumber;
             });
 
+            // Capture the supervisor id BEFORE any mutation so we can push to
+            // both old + new supervisors after the save commits.
+            var oldSupervisorUserId = user.SupervisorUserId;
+
             if (isStudent)
             {
                 string oldSupervisorName = "(unknown)";
@@ -479,6 +582,52 @@ public async Task<List<SupervisorStudentListItemResponse>> GetSupervisorStudents
             if (!isSelfUpdate)
             {
                 await SendUserUpdatedEmailAsync(user, oldEmail, changes);
+            }
+
+            // -----------------------------------------------------------
+            // Real-time pushes:
+            //  1. Tell the user their profile changed (frontend re-fetches user).
+            //     Even on self-updates we push so other tabs of the same user sync.
+            //  2. If this is a student whose supervisor was reassigned, tell the
+            //     old supervisor (their student list lost a row) and the new
+            //     supervisor (their student list gained a row).
+            //  3. Tell admins — the user-management table needs to refresh.
+            // -----------------------------------------------------------
+            try
+            {
+                await _notifications.NotifyUserUpdatedAsync(user.Id);
+
+                var supervisorChanged = isStudent &&
+                    !string.Equals(oldSupervisorUserId, user.SupervisorUserId, StringComparison.Ordinal);
+
+                if (supervisorChanged)
+                {
+                    if (!string.IsNullOrWhiteSpace(oldSupervisorUserId))
+                    {
+                        await _notifications.NotifySupervisorStudentsChangedAsync(oldSupervisorUserId);
+                    }
+                    if (!string.IsNullOrWhiteSpace(user.SupervisorUserId))
+                    {
+                        await _notifications.NotifySupervisorStudentsChangedAsync(user.SupervisorUserId);
+                    }
+                }
+
+                if (!isSelfUpdate)
+                {
+                    await _notifications.NotifyAdminsUserListChangedAsync(new UserListChangePayload
+                    {
+                        Kind = UserListChangeKinds.Updated,
+                        UserId = user.Id,
+                        UserName = user.UserName,
+                        FullName = user.FullName,
+                        Role = role,
+                        ByUserId = GetActingUserId()
+                    });
+                }
+            }
+            catch
+            {
+                // Best-effort.
             }
 
             return new UpdateUserResponse
@@ -603,6 +752,12 @@ public async Task<List<SupervisorStudentListItemResponse>> GetSupervisorStudents
                 Message = "Bulk delete completed"
             };
 
+            // Snapshots collected during the loop so we can push enriched
+            // UserListChanged events after all deletes commit. We can't read
+            // user.UserName etc. AFTER the delete — the entity is gone.
+            var deletedSnapshots = new List<UserListChangePayload>();
+            var actingUserId = GetActingUserId();
+
             foreach (var userId in request.UserIds.Distinct())
             {
                 var user = await _userManager.FindByIdAsync(userId);
@@ -711,6 +866,17 @@ public async Task<List<SupervisorStudentListItemResponse>> GetSupervisorStudents
                         Id = user.Id,
                         UserName = user.UserName
                     });
+
+                    // Snapshot for the real-time push at the end of the bulk op.
+                    deletedSnapshots.Add(new UserListChangePayload
+                    {
+                        Kind = UserListChangeKinds.Deleted,
+                        UserId = user.Id,
+                        UserName = user.UserName,
+                        FullName = user.FullName,
+                        Role = roles.FirstOrDefault(),
+                        ByUserId = actingUserId
+                    });
                 }
                 catch (Exception ex)
                 {
@@ -720,6 +886,24 @@ public async Task<List<SupervisorStudentListItemResponse>> GetSupervisorStudents
                         UserName = user.UserName,
                         Reason = "Delete failed because of related data"
                     });
+                }
+            }
+
+            // Real-time push: one event per deleted user so admin clients can
+            // remove rows individually (and toast individually if they want).
+            // Skipped if nothing actually got deleted, so a no-op call stays quiet.
+            if (deletedSnapshots.Count > 0)
+            {
+                try
+                {
+                    foreach (var snapshot in deletedSnapshots)
+                    {
+                        await _notifications.NotifyAdminsUserListChangedAsync(snapshot);
+                    }
+                }
+                catch
+                {
+                    // Best-effort.
                 }
             }
 

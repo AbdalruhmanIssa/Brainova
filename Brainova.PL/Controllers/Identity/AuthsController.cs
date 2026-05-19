@@ -83,12 +83,21 @@ namespace Brainova.PL.Areas.Identity.Controllers
         {
             var opts = BuildAuthCookieOptions(DateTime.UtcNow.AddDays(-1));
             Response.Cookies.Delete(AccessTokenCookieName, opts);
-            Response.Cookies.Delete("XSRF-TOKEN", new CookieOptions
+
+            var xsrfDeleteOpts = new CookieOptions
             {
                 Path = "/",
                 Secure = !_env.IsDevelopment(),
                 SameSite = SameSiteMode.None
-            });
+            };
+            // Match the Partitioned flag used when the cookie was originally set —
+            // browsers won't delete a partitioned cookie via a non-partitioned Set-Cookie.
+            if (!_env.IsDevelopment())
+            {
+                xsrfDeleteOpts.Extensions.Add("Partitioned");
+            }
+            Response.Cookies.Delete("XSRF-TOKEN", xsrfDeleteOpts);
+
             return Ok(new { success = true });
         }
 
@@ -145,7 +154,7 @@ namespace Brainova.PL.Areas.Identity.Controllers
 
         private CookieOptions BuildAuthCookieOptions(DateTime expiresUtc)
         {
-            return new CookieOptions
+            var options = new CookieOptions
             {
                 HttpOnly = true,                                  // blocks JS access (XSS protection)
                 Secure = !_env.IsDevelopment(),                   // HTTPS-only in non-dev
@@ -153,6 +162,19 @@ namespace Brainova.PL.Areas.Identity.Controllers
                 Path = "/",
                 Expires = new DateTimeOffset(expiresUtc, TimeSpan.Zero)
             };
+
+            // CHIPS — Partitioned cookies. REQUIRED for iOS Safari 17+ (and other modern
+            // browsers with strict cross-site cookie policies / ITP) to actually STORE a
+            // cross-site SameSite=None cookie. Without `Partitioned`, Safari silently
+            // drops the Set-Cookie header in production and the user appears to be
+            // kicked out immediately after login.
+            // Safe to always emit — older browsers ignore unknown attributes.
+            if (!_env.IsDevelopment())
+            {
+                options.Extensions.Add("Partitioned");
+            }
+
+            return options;
         }
 
         private void IssueCsrfCookie()

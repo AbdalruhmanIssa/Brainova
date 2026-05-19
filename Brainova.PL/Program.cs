@@ -10,6 +10,7 @@ using Brainova.DAL.Utilites;
 using Brainova.DAL.Utilities;
 using Brainova.PL.uti;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.UI.Services;
 using Microsoft.AspNetCore.SignalR;
@@ -32,6 +33,24 @@ if (!builder.Environment.IsDevelopment())
     var port = Environment.GetEnvironmentVariable("PORT") ?? "8080";
     builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
 }
+
+// ==============================
+// Forwarded headers — REQUIRED when running behind a TLS-terminating proxy
+// (Render, Azure App Service, Nginx, Cloudflare, etc.).
+// Without this, ASP.NET sees Request.Scheme = "http" even though the browser
+// is on HTTPS. That breaks `Secure` cookies, HttpsRedirection, and is the
+// #1 cause of iOS Safari refusing to store the auth cookie after login.
+// ==============================
+builder.Services.Configure<ForwardedHeadersOptions>(options =>
+{
+    options.ForwardedHeaders = ForwardedHeaders.XForwardedFor
+                             | ForwardedHeaders.XForwardedProto
+                             | ForwardedHeaders.XForwardedHost;
+    // We are deployed on a managed PaaS where the proxy IP isn't known/static.
+    // Clearing these lets ASP.NET trust the forwarded headers regardless of source.
+    options.KnownNetworks.Clear();
+    options.KnownProxies.Clear();
+});
 
 
 
@@ -220,6 +239,11 @@ builder.Services.AddControllers();
 builder.Services.AddOpenApi();
 
 var app = builder.Build();
+
+// MUST be the first middleware so all subsequent middleware sees the correct
+// scheme/host/IP forwarded by the upstream proxy (HTTPS, real client IP, etc.).
+app.UseForwardedHeaders();
+
 app.UseCors("AllowFrontend");
 
 app.UseMiddleware<Brainova.BLL.Exceptions.ApiExceptionMiddleware>();
@@ -241,10 +265,12 @@ app.UseStaticFiles();
 app.UseAuthentication();
 
 
-if (!app.Environment.IsDevelopment())
-{
-    app.UseHttpsRedirection();
-}
+// HTTPS redirection intentionally NOT enabled in production:
+// the platform proxy (Render/Azure/etc.) terminates TLS and forwards plain HTTP
+// to our container on $PORT. Calling UseHttpsRedirection here would issue a 307
+// from inside the proxy, which iOS Safari treats inconsistently with
+// SameSite=None cookies (the auth cookie can be dropped on the redirect hop).
+// TLS enforcement should be done at the proxy level.
 
 // ==============================
 // CSRF middleware DISABLED for now. The double-submit cookie pattern doesn't work

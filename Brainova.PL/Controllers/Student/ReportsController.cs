@@ -24,11 +24,14 @@ namespace Brainova.PL.Controllers.Student
             _reportPdfService = reportPdfService;
         }
 
-        // GET: api/Student/Reports/questions
         [HttpGet("questions")]
         public async Task<IActionResult> GetQuestions()
         {
-            var questions = await _qSvc.GetActiveAsync();
+            var studentId = User.FindFirst("Id")?.Value;
+            if (string.IsNullOrWhiteSpace(studentId))
+                return Unauthorized();
+
+            var questions = await _qSvc.GetActiveForStudentAsync(studentId);
 
             var dto = questions.Select(q => new ReportQuestionResponse
             {
@@ -38,6 +41,8 @@ namespace Brainova.PL.Controllers.Student
                 Type = q.Type,
                 Order = q.Order,
                 IsRequired = q.IsRequired,
+                SkipWhenNoTumor = q.SkipWhenNoTumor,
+                IsSystem = q.IsSystem,
                 Options = string.IsNullOrWhiteSpace(q.OptionsJson)
                     ? null
                     : System.Text.Json.JsonSerializer.Deserialize<List<string>>(q.OptionsJson)

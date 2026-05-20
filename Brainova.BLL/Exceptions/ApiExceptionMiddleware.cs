@@ -26,14 +26,19 @@ namespace Brainova.BLL.Exceptions
                     message = ex.Message
                 });
             }
-            catch (Exception)
+            catch (Exception ex)
             {
                 context.Response.StatusCode = 500;
                 context.Response.ContentType = "application/json";
                 await context.Response.WriteAsJsonAsync(new
                 {
                     success = false,
-                    message = "Unexpected server error."
+                    message = "Unexpected server error.",
+                    // 🔍 Debug: surface the real exception so we can fix the 500.
+                    // Remove these two fields once everything is stable.
+                    error = ex.Message,
+                    exceptionType = ex.GetType().FullName,
+                    stack = ex.StackTrace
                 });
             }
         }

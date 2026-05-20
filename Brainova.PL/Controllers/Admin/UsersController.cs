@@ -88,17 +88,9 @@ namespace Brainova.PL.Controllers.Admin
             var list = await _userService.GetSupervisorsAsync();
             return Ok(list);
         }
-      
-
-        [HttpDelete("{userId}")]
-        [Authorize(Roles = "Admin,SuperAdmin")] // Only Admin and SuperAdmin can update users
 
 
-        public async Task<IActionResult> DeleteUser([FromRoute] string userId)
-        {
-            var msg = await _userService.DeleteUserAsync(userId);
-            return Ok(new { message = msg });
-        }
+   
         [HttpPut("update/{userId}")]
         public async Task<IActionResult> UpdateUser(string userId, UpdateUserRequest request)
         {

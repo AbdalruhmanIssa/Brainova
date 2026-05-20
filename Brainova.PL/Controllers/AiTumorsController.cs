@@ -11,10 +11,12 @@ namespace Brainova.PL.Controllers
     public class AiTumorsController : ControllerBase
     {
         private readonly IAiTumorService _aiService;
+       private readonly IReportQuestionService _reportQuestionService;
 
-        public AiTumorsController(IAiTumorService aiService)
+        public AiTumorsController(IAiTumorService aiService, IReportQuestionService reportQuestionService)
         {
             _aiService = aiService;
+            _reportQuestionService = reportQuestionService;
         }
 
        
@@ -59,6 +61,13 @@ namespace Brainova.PL.Controllers
         }
         [HttpGet("ping")]
         public IActionResult Ping() => Ok("PING_OK");
+        //هاي استخدامها مرة وحدة بس عشان لو في مشرفين موجودين قبل ما نضيف الاسئلة الافتراضية، نضيفها لهم
+        //[HttpPost("seed-existing-supervisors-questions")]
+        //public async Task<IActionResult> SeedExistingSupervisorsQuestions(CancellationToken ct)
+        //{
+        //    await _reportQuestionService.SeedDefaultQuestionsForAllExistingSupervisorsAsync(ct);
+        //    return Ok(new { message = "Default questions seeded for existing supervisors." });
+        //}
     }
 }
 //[HttpPost("predict")]

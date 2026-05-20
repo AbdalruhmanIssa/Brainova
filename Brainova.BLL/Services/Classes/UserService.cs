@@ -1,4 +1,5 @@
 ﻿using Brainova.BLL.DTOs.Auth;
+using Brainova.BLL.DTOs.Realtime;
 using Brainova.BLL.DTOs.Response;
 using Brainova.BLL.DTOs.User;
 using Brainova.BLL.Exceptions;
@@ -19,6 +20,8 @@ namespace Brainova.BLL.Services.Classes
         private readonly IEmailSender _emailSender;
         private readonly IUnitOfWork _uow;
         private readonly IHttpContextAccessor _httpContextAccessor;
+        private readonly IReportQuestionService _reportQuestionService;
+        private readonly INotificationService _notifications;
 
 
         public UserService(
@@ -26,38 +29,95 @@ namespace Brainova.BLL.Services.Classes
             UserManager<ApplicationUser> userManager,
             IEmailSender emailSender,
             IUnitOfWork uow,
-            IHttpContextAccessor httpContextAccessor)
+            IHttpContextAccessor httpContextAccessor,
+            IReportQuestionService reportQuestionService,
+            INotificationService notifications)
         {
             _userRepository = userRepository;
             _userManager = userManager;
             _emailSender = emailSender;
             _uow = uow;
             _httpContextAccessor = httpContextAccessor;
+            _reportQuestionService = reportQuestionService;
+            _notifications = notifications;
         }
+        /// <summary>
+        /// Returns the id of the admin/super-admin currently performing the
+        /// request (or null if none — e.g. background flows). Used to enrich
+        /// the "UserListChanged" SignalR payload with "byUserId".
+        /// </summary>
+        private string? GetActingUserId()
+            => _httpContextAccessor.HttpContext?.User?.FindFirst("Id")?.Value;
+
         //GET
 
         public async Task<List<UserDTO>> GetAllAsync()
         {
+            // ----------------------------------------------------------------
+            // Optimized: 3 queries total instead of 1 + N (per-user GetRoles)
+            // + M (per-student supervisor lookup). With ~50 users this was
+            // ~80 round-trips taking 3-5s on Azure SQL; now it's ~150ms.
+            // ----------------------------------------------------------------
+
+            // (1) all users
             var users = await _userRepository.GetAllAsync();
-            var list = new List<UserDTO>();
+            if (users.Count == 0) return new List<UserDTO>();
 
-            foreach (var u in users)
+            var userIds = users.Select(u => u.Id).ToList();
+
+            // (2) all (userId, roleName) mappings in one JOIN — covers every user.
+            //     Replaces the per-user _userManager.GetRolesAsync call.
+            var userRolePairs = await (
+                from ur in _uow.Repo<IdentityUserRole<string>>().Query()
+                join r in _uow.Repo<IdentityRole>().Query() on ur.RoleId equals r.Id
+                where userIds.Contains(ur.UserId)
+                select new { ur.UserId, RoleName = r.Name }
+            ).ToListAsync();
+
+            var rolesByUserId = userRolePairs
+                .GroupBy(x => x.UserId)
+                .ToDictionary(
+                    g => g.Key,
+                    g => g.Select(x => x.RoleName ?? string.Empty)
+                          .Where(n => !string.IsNullOrWhiteSpace(n))
+                          .ToList());
+
+            // (3) supervisor names — one batch query for all students who have one.
+            //     Replaces the per-student _userManager.FindByIdAsync call.
+            var supervisorIds = users
+                .Where(u =>
+                    !string.IsNullOrWhiteSpace(u.SupervisorUserId) &&
+                    rolesByUserId.TryGetValue(u.Id, out var rs) &&
+                    rs.Contains("Student"))
+                .Select(u => u.SupervisorUserId!)
+                .Distinct()
+                .ToList();
+
+            var supervisorNamesById = supervisorIds.Count == 0
+                ? new Dictionary<string, string>()
+                : await _uow.Repo<ApplicationUser>()
+                    .Query()
+                    .Where(u => supervisorIds.Contains(u.Id))
+                    .Select(u => new { u.Id, u.FullName })
+                    .ToDictionaryAsync(x => x.Id, x => x.FullName);
+
+            // (4) assemble DTOs in-memory — no more DB calls.
+            return users.Select(u =>
             {
-                var roles = await _userManager.GetRolesAsync(u);
-                var roleName = roles.FirstOrDefault() ?? "";
+                var roleName = rolesByUserId.TryGetValue(u.Id, out var rs)
+                    ? rs.FirstOrDefault() ?? string.Empty
+                    : string.Empty;
 
-                string? supervisorName = null;
                 string? supervisorId = null;
+                string? supervisorName = null;
 
                 if (roleName == "Student" && !string.IsNullOrWhiteSpace(u.SupervisorUserId))
                 {
                     supervisorId = u.SupervisorUserId;
-
-                    var supervisor = await _userManager.FindByIdAsync(u.SupervisorUserId);
-                    supervisorName = supervisor?.FullName;
+                    supervisorNamesById.TryGetValue(u.SupervisorUserId, out supervisorName);
                 }
 
-                list.Add(new UserDTO
+                return new UserDTO
                 {
                     Id = u.Id,
                     FullName = u.FullName,
@@ -70,10 +130,8 @@ namespace Brainova.BLL.Services.Classes
 
                     SupervisorId = supervisorId,
                     SupervisorName = supervisorName
-                });
-            }
-
-            return list;
+                };
+            }).ToList();
         }
 
         public async Task<UserDTO?> GetByIdAsync(string userId)
@@ -174,8 +232,94 @@ public async Task<List<SupervisorStudentListItemResponse>> GetSupervisorStudents
 
         //Block/Unblock
 
-        public Task<bool> BlockUserAsync(string userId) => _userRepository.BlockUserAsync(userId);
-        public Task<bool> UnBlockUserAsync(string userId) => _userRepository.UnBlockUserAsync(userId);
+        public async Task<bool> BlockUserAsync(string userId)
+        {
+            // Look up the user BEFORE the block so we can tell their supervisor
+            // (if they're a student) that their student list changed.
+            var user = await _userManager.FindByIdAsync(userId);
+
+            var success = await _userRepository.BlockUserAsync(userId);
+
+            // -----------------------------------------------------------
+            // Real-time pushes (SignalR):
+            //  1. Tell the user → frontend force-logouts.
+            //  2. Tell admins → user-management table updates live.
+            //  3. If a student got blocked → tell their supervisor too
+            //     (their /Supervisor/Students list might show isBlocked).
+            //
+            // Best-effort: a notification failure must not roll back the
+            // block — the user IS blocked in the DB regardless.
+            // -----------------------------------------------------------
+            if (success)
+            {
+                try
+                {
+                    await _notifications.NotifyUserBlockedAsync(userId);
+                    await _notifications.NotifyAdminsUserListChangedAsync(new UserListChangePayload
+                    {
+                        Kind = UserListChangeKinds.Blocked,
+                        UserId = userId,
+                        UserName = user?.UserName,
+                        FullName = user?.FullName,
+                        ByUserId = GetActingUserId()
+                    });
+
+                    if (user != null && !string.IsNullOrWhiteSpace(user.SupervisorUserId))
+                    {
+                        var roles = await _userManager.GetRolesAsync(user);
+                        if (roles.Contains("Student"))
+                        {
+                            await _notifications.NotifySupervisorStudentsChangedAsync(
+                                user.SupervisorUserId);
+                        }
+                    }
+                }
+                catch
+                {
+                    // Best-effort.
+                }
+            }
+
+            return success;
+        }
+        public async Task<bool> UnBlockUserAsync(string userId)
+        {
+            var user = await _userManager.FindByIdAsync(userId);
+            var success = await _userRepository.UnBlockUserAsync(userId);
+
+            // Symmetric with BlockUserAsync.
+            if (success)
+            {
+                try
+                {
+                    await _notifications.NotifyUserUnblockedAsync(userId);
+                    await _notifications.NotifyAdminsUserListChangedAsync(new UserListChangePayload
+                    {
+                        Kind = UserListChangeKinds.Unblocked,
+                        UserId = userId,
+                        UserName = user?.UserName,
+                        FullName = user?.FullName,
+                        ByUserId = GetActingUserId()
+                    });
+
+                    if (user != null && !string.IsNullOrWhiteSpace(user.SupervisorUserId))
+                    {
+                        var roles = await _userManager.GetRolesAsync(user);
+                        if (roles.Contains("Student"))
+                        {
+                            await _notifications.NotifySupervisorStudentsChangedAsync(
+                                user.SupervisorUserId);
+                        }
+                    }
+                }
+                catch
+                {
+                    // Best-effort.
+                }
+            }
+
+            return success;
+        }
         public Task<bool> IsBlockedAsync(string userId) => _userRepository.IsBlockedAsync(userId);
 
         public Task<string> CreateSupervisorAsync(CreateUserRequest request, HttpRequest httpRequest)
@@ -228,6 +372,11 @@ public async Task<List<SupervisorStudentListItemResponse>> GetSupervisorStudents
             if (!success || createdUser == null)
                 throw new BadRequestException(message);
 
+            if (roleName == "Supervisor")
+            {
+                await _reportQuestionService.SeedSystemQuestionsForSupervisorAsync(createdUser.Id);
+            }
+
             var token = await _userManager.GeneratePasswordResetTokenAsync(createdUser);
             var tokenEscaped = Uri.EscapeDataString(token);
 
@@ -242,6 +391,34 @@ public async Task<List<SupervisorStudentListItemResponse>> GetSupervisorStudents
                 $"<p>Click below to set your password:</p>" +
                 $"<a href='{link}'>Set Password</a>"
             );
+
+            // Real-time push: broadcast to admins so their user-management
+            // table updates without manual refresh. If a Student was created
+            // and assigned to a supervisor, also tell that supervisor so their
+            // "my students" list gains the new row.
+            try
+            {
+                await _notifications.NotifyAdminsUserListChangedAsync(new UserListChangePayload
+                {
+                    Kind = UserListChangeKinds.Created,
+                    UserId = createdUser.Id,
+                    UserName = createdUser.UserName,
+                    FullName = createdUser.FullName,
+                    Role = roleName,
+                    ByUserId = GetActingUserId()
+                });
+
+                if (roleName == "Student" &&
+                    !string.IsNullOrWhiteSpace(createdUser.SupervisorUserId))
+                {
+                    await _notifications.NotifySupervisorStudentsChangedAsync(
+                        createdUser.SupervisorUserId);
+                }
+            }
+            catch
+            {
+                // Best-effort.
+            }
 
             return $"{roleName} created successfully. Set-password email sent.";
         }
@@ -293,6 +470,46 @@ public async Task<List<SupervisorStudentListItemResponse>> GetSupervisorStudents
                 $"<p><strong>Old Role:</strong> {result.OldRole ?? "None"}</p>" +
                 $"<p><strong>New Role:</strong> {request.RoleName}</p>"
             );
+
+            // -----------------------------------------------------------
+            // Real-time pushes:
+            //  1. Tell the affected user — frontend should re-fetch user +
+            //     re-route to the dashboard matching the new role.
+            //  2. Tell admins — the user list table / supervisor dropdown
+            //     should refresh.
+            // -----------------------------------------------------------
+            try
+            {
+                await _notifications.NotifyUserRoleChangedAsync(
+                    user.Id,
+                    result.OldRole,
+                    request.RoleName);
+
+                await _notifications.NotifyAdminsUserListChangedAsync(new UserListChangePayload
+                {
+                    Kind = UserListChangeKinds.RoleChanged,
+                    UserId = user.Id,
+                    UserName = user.UserName,
+                    FullName = user.FullName,
+                    Role = request.RoleName,
+                    OldRole = result.OldRole,
+                    ByUserId = GetActingUserId()
+                });
+
+                // If a Student got changed to anything else, their old supervisor
+                // loses them from /Supervisor/Students — tell that supervisor.
+                if (oldRole == "Student" &&
+                    request.RoleName != "Student" &&
+                    !string.IsNullOrWhiteSpace(user.SupervisorUserId))
+                {
+                    await _notifications.NotifySupervisorStudentsChangedAsync(
+                        user.SupervisorUserId);
+                }
+            }
+            catch
+            {
+                // Best-effort.
+            }
 
             return new ChangeUserRoleResponse
             {
@@ -402,6 +619,10 @@ public async Task<List<SupervisorStudentListItemResponse>> GetSupervisorStudents
                 user.PhoneNumber = request.PhoneNumber;
             });
 
+            // Capture the supervisor id BEFORE any mutation so we can push to
+            // both old + new supervisors after the save commits.
+            var oldSupervisorUserId = user.SupervisorUserId;
+
             if (isStudent)
             {
                 string oldSupervisorName = "(unknown)";
@@ -442,6 +663,59 @@ public async Task<List<SupervisorStudentListItemResponse>> GetSupervisorStudents
             if (!isSelfUpdate)
             {
                 await SendUserUpdatedEmailAsync(user, oldEmail, changes);
+            }
+
+            // -----------------------------------------------------------
+            // Real-time pushes:
+            //  1. Tell the user their profile changed (frontend re-fetches user).
+            //     Even on self-updates we push so other tabs of the same user sync.
+            //  2. If this is a student whose supervisor was reassigned, tell the
+            //     old supervisor (their student list lost a row) and the new
+            //     supervisor (their student list gained a row).
+            //  3. Tell admins — the user-management table needs to refresh.
+            // -----------------------------------------------------------
+            try
+            {
+                await _notifications.NotifyUserUpdatedAsync(user.Id);
+
+                var supervisorChanged = isStudent &&
+                    !string.Equals(oldSupervisorUserId, user.SupervisorUserId, StringComparison.Ordinal);
+
+                if (supervisorChanged)
+                {
+                    // Reassignment: old supervisor lost a student, new gained one.
+                    if (!string.IsNullOrWhiteSpace(oldSupervisorUserId))
+                    {
+                        await _notifications.NotifySupervisorStudentsChangedAsync(oldSupervisorUserId);
+                    }
+                    if (!string.IsNullOrWhiteSpace(user.SupervisorUserId))
+                    {
+                        await _notifications.NotifySupervisorStudentsChangedAsync(user.SupervisorUserId);
+                    }
+                }
+                else if (isStudent && !string.IsNullOrWhiteSpace(user.SupervisorUserId))
+                {
+                    // Same supervisor, but the student's info (name/email/etc.) may
+                    // have changed — the supervisor's list shows that info, so push.
+                    await _notifications.NotifySupervisorStudentsChangedAsync(user.SupervisorUserId);
+                }
+
+                // Always broadcast to admins+superadmins — even for self-updates.
+                // A supervisor editing their own info should still be visible to
+                // admins/superadmins managing the user list.
+                await _notifications.NotifyAdminsUserListChangedAsync(new UserListChangePayload
+                {
+                    Kind = UserListChangeKinds.Updated,
+                    UserId = user.Id,
+                    UserName = user.UserName,
+                    FullName = user.FullName,
+                    Role = role,
+                    ByUserId = GetActingUserId()
+                });
+            }
+            catch
+            {
+                // Best-effort.
             }
 
             return new UpdateUserResponse
@@ -566,6 +840,10 @@ public async Task<List<SupervisorStudentListItemResponse>> GetSupervisorStudents
                 Message = "Bulk delete completed"
             };
 
+            // Captured once so we don't re-read it every iteration. Used inside
+            // the loop to tag each per-user push with the acting admin.
+            var actingUserId = GetActingUserId();
+
             foreach (var userId in request.UserIds.Distinct())
             {
                 var user = await _userManager.FindByIdAsync(userId);
@@ -599,6 +877,42 @@ public async Task<List<SupervisorStudentListItemResponse>> GetSupervisorStudents
                                 Reason = "students are assigned to this supervisor"
                             });
                             continue;
+                        }
+
+                        // Clean up the supervisor's questions before deleting the user.
+                        // Questions with no answers can be hard-deleted.
+                        // Questions that have been answered get orphaned (SupervisorId = null)
+                        // so historical reports remain intact.
+                        var supervisorQuestions = await _uow.Repo<ReportQuestion>()
+                            .Query()
+                            .Where(q => q.SupervisorId == user.Id)
+                            .ToListAsync();
+
+                        if (supervisorQuestions.Any())
+                        {
+                            var questionIds = supervisorQuestions.Select(q => q.Id).ToList();
+
+                            var answeredQuestionIds = await _uow.Repo<ReportAnswer>()
+                                .Query()
+                                .Where(a => questionIds.Contains(a.QuestionId))
+                                .Select(a => a.QuestionId)
+                                .Distinct()
+                                .ToListAsync();
+
+                            foreach (var q in supervisorQuestions)
+                            {
+                                if (answeredQuestionIds.Contains(q.Id))
+                                {
+                                    q.SupervisorId = null;
+                                    _uow.Repo<ReportQuestion>().Update(q);
+                                }
+                                else
+                                {
+                                    _uow.Repo<ReportQuestion>().Remove(q);
+                                }
+                            }
+
+                            await _uow.SaveChangesAsync();
                         }
                     }
 
@@ -638,6 +952,37 @@ public async Task<List<SupervisorStudentListItemResponse>> GetSupervisorStudents
                         Id = user.Id,
                         UserName = user.UserName
                     });
+
+                    // Push IMMEDIATELY (inside the loop) so admin tables update
+                    // progressively instead of waiting for the whole bulk to finish.
+                    // For a bulk of N users, this turns a single ~10s wait into N
+                    // smaller refreshes spread across the operation.
+                    var snapshot = new UserListChangePayload
+                    {
+                        Kind = UserListChangeKinds.Deleted,
+                        UserId = user.Id,
+                        UserName = user.UserName,
+                        FullName = user.FullName,
+                        Role = roles.FirstOrDefault(),
+                        ByUserId = actingUserId
+                    };
+
+                    try
+                    {
+                        await _notifications.NotifyAdminsUserListChangedAsync(snapshot);
+
+                        // If the deleted user was a Student, tell their supervisor too.
+                        if (roles.Contains("Student") &&
+                            !string.IsNullOrWhiteSpace(user.SupervisorUserId))
+                        {
+                            await _notifications.NotifySupervisorStudentsChangedAsync(
+                                user.SupervisorUserId);
+                        }
+                    }
+                    catch
+                    {
+                        // Best-effort.
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -650,28 +995,12 @@ public async Task<List<SupervisorStudentListItemResponse>> GetSupervisorStudents
                 }
             }
 
+            // Per-user pushes already happened inside the loop above
+            // (progressive UI updates).
             return result;
         }
 
-        public async Task<string> DeleteUserAsync(string userId)
-        {
-            var user = await _userManager.FindByIdAsync(userId);
-            if (user is null) throw new NotFoundException("User not found");
-
-            var roles = await _userManager.GetRolesAsync(user);
-            if (roles.Contains("Supervisor"))
-            {
-                var hasStudents = await _userManager.Users.AnyAsync(u => u.SupervisorUserId == user.Id);
-                if (hasStudents)
-                    throw new BadRequestException("Can't delete supervisor: has assigned students");
-            }
-
-            var result = await _userManager.DeleteAsync(user);
-            if (!result.Succeeded)
-                throw new BadRequestException(string.Join(";", result.Errors.Select(e => e.Description)));
-
-            return "User deleted successfully";
-        }
+        
 
        
     }

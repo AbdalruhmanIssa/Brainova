@@ -21,16 +21,30 @@ namespace Brainova.BLL.Hubs
         // No client-callable methods are needed for the feedback use case:
         // the server pushes; the client only listens.
         //
-        // On connect we add the connection to a group keyed by the user's role
-        // (read from the JWT "Role" claim — same claim type configured in Program.cs).
-        // This lets the server broadcast to e.g. "all admins" without having to
-        // maintain a list of user ids.
+        // On connect we add the connection to a group keyed by EACH of the user's
+        // "Role" claims (a user can in theory have multiple). This is what lets
+        // the server broadcast to e.g. "all admins" without maintaining a list
+        // of user ids.
+        //
+        // We iterate FindAll, not FindFirst, because:
+        //  - SuperAdmins reported missing pushes earlier — if the JWT happens to
+        //    carry multiple Role claims, FindFirst could pick the wrong one.
+        //  - Future-proofing: any user with overlapping roles still gets routed
+        //    to all relevant groups.
         public override async Task OnConnectedAsync()
         {
-            var role = Context.User?.FindFirst("Role")?.Value;
-            if (!string.IsNullOrWhiteSpace(role))
+            if (Context.User != null)
             {
-                await Groups.AddToGroupAsync(Context.ConnectionId, RoleGroup(role));
+                var roles = Context.User
+                    .FindAll("Role")
+                    .Select(c => c.Value)
+                    .Where(v => !string.IsNullOrWhiteSpace(v))
+                    .Distinct();
+
+                foreach (var role in roles)
+                {
+                    await Groups.AddToGroupAsync(Context.ConnectionId, RoleGroup(role));
+                }
             }
             await base.OnConnectedAsync();
         }

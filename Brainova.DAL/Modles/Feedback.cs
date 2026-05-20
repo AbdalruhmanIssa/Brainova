@@ -14,6 +14,6 @@ namespace Brainova.DAL.Modles
         public ApplicationUser Student { get; set; } = default!;
 
         public string Comment { get; set; } = default!;
-     //  public bool IsSeen { get; set; }
+        public bool IsSeen { get; set; }
     }
 }

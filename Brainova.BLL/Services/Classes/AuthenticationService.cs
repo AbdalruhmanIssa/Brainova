@@ -33,6 +33,71 @@ namespace Brainova.BLL.Services.Classes
 
         public async Task<UserResponse> LoginAsync(LoginRequest request)
         {
+            var (user, _) = await AuthenticateAsync(request);
+            return new UserResponse
+            {
+                Token = await CreateTokenAsync(user)
+            };
+        }
+
+        public async Task<(string Token, CurrentUserResponse User, DateTime ExpiresUtc)> LoginForCookieAsync(LoginRequest request)
+        {
+            var (user, _) = await AuthenticateAsync(request);
+
+            var token = await CreateTokenAsync(user);
+            var expiresUtc = GetTokenExpiryUtc();
+            var currentUser = await BuildCurrentUserResponseAsync(user);
+
+            return (token, currentUser, expiresUtc);
+        }
+
+        public async Task<CurrentUserResponse> GetCurrentUserAsync(ClaimsPrincipal principal)
+        {
+            var userId = principal.FindFirst("Id")?.Value
+                         ?? principal.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+
+            if (string.IsNullOrEmpty(userId))
+                throw new UnauthorizedException("Not authenticated");
+
+            var user = await _userManager.FindByIdAsync(userId);
+            if (user is null)
+                throw new NotFoundException("User not found");
+
+            if (user.IsBlocked)
+                throw new ForbiddenException("Your account is blocked");
+
+            return await BuildCurrentUserResponseAsync(user);
+        }
+
+        // Shared shape builder. Loads roles and (if present) the supervisor's FullName
+        // so the response always carries up-to-date info.
+        private async Task<CurrentUserResponse> BuildCurrentUserResponseAsync(ApplicationUser user)
+        {
+            var roles = await _userManager.GetRolesAsync(user);
+
+            string? supervisorFullName = null;
+            if (!string.IsNullOrEmpty(user.SupervisorUserId))
+            {
+                var supervisor = await _userManager.FindByIdAsync(user.SupervisorUserId);
+                supervisorFullName = supervisor?.FullName;
+            }
+
+            return new CurrentUserResponse
+            {
+                Id = user.Id,
+                UserName = user.UserName ?? string.Empty,
+                FullName = user.FullName ?? string.Empty,
+                Email = user.Email ?? string.Empty,
+                PhoneNumber = user.PhoneNumber,
+                Roles = roles,
+                SupervisorUserId = user.SupervisorUserId,
+                SupervisorFullName = supervisorFullName
+            };
+        }
+
+        // Shared authentication logic used by both header-token and cookie login flows.
+        private async Task<(ApplicationUser User, Microsoft.AspNetCore.Identity.SignInResult Result)> AuthenticateAsync(LoginRequest request)
+        {
             var user =
                 await _userManager.FindByEmailAsync(request.EmailOrUserName)
                 ?? await _userManager.FindByNameAsync(request.EmailOrUserName);
@@ -47,12 +112,7 @@ namespace Brainova.BLL.Services.Classes
             var result = await _signInManager.CheckPasswordSignInAsync(user, request.Password, true);
 
             if (result.Succeeded)
-            {
-                return new UserResponse
-                {
-                    Token = await CreateTokenAsync(user)
-                };
-            }
+                return (user, result);
 
             if (result.IsLockedOut)
                 throw new ForbiddenException("Your account is locked");
@@ -249,17 +309,24 @@ namespace Brainova.BLL.Services.Classes
 
             var issuer = jwtSection["Issuer"];
             var audience = jwtSection["Audience"];
-            var minutes = double.TryParse(jwtSection["DurationInMinutes"], out var m) ? m : 60;
 
             var token = new JwtSecurityToken(
                 issuer: issuer,
                 audience: audience,
                 claims: claims,
-                expires: DateTime.UtcNow.AddMinutes(minutes),
+                expires: GetTokenExpiryUtc(),
                 signingCredentials: credentials
             );
 
             return new JwtSecurityTokenHandler().WriteToken(token);
+        }
+
+        // Single source of truth for token lifetime, so the cookie and JWT stay in sync.
+        private DateTime GetTokenExpiryUtc()
+        {
+            var jwtSection = _configuration.GetSection("jwtOptions");
+            var minutes = double.TryParse(jwtSection["DurationInMinutes"], out var m) ? m : 60;
+            return DateTime.UtcNow.AddMinutes(minutes);
         }
     }
 }

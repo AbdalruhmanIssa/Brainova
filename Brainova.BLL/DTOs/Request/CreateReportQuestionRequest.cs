@@ -19,6 +19,8 @@ namespace Brainova.BLL.DTOs.Request
         public bool IsActive { get; set; } = true;
         public bool IsRequired { get; set; }
 
+        public bool SkipWhenNoTumor { get; set; } = false;
+
         public List<string>? Options { get; set; }
     }
 }

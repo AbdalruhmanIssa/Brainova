@@ -3,8 +3,7 @@
     public enum ReportQuestionType : byte
     {
         Text = 1,
-        SingleChoice = 2,
-        MultiChoice = 3
+        SingleChoice = 2
         
     }
 }

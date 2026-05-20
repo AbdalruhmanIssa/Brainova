@@ -10,8 +10,12 @@ namespace Brainova.BLL.Mapping
         public void Register(TypeAdapterConfig config)
         {
             config.NewConfig<MriCase, MriUploadResponse>()
-      .Map(dest => dest.CaseId, src => src.Id)
-      .Map(dest => dest.StoredFileName, src => src.StoredFileName);
+    .Map(dest => dest.CaseId, src => src.Id)
+    .Map(dest => dest.StoredFileName, src => src.StoredFileName)
+    .Map(dest => dest.CreatedAt, src =>
+        TimeZoneInfo.ConvertTimeFromUtc(
+            src.CreatedAt,
+            TimeZoneInfo.FindSystemTimeZoneById("Asia/Hebron")));
         }
     }
 }

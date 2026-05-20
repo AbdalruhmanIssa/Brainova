@@ -52,15 +52,15 @@ namespace Brainova.PL.Controllers.Student
             return PhysicalFile(path, "image/jpeg");
         }
         [HttpGet("my-cases")]
-        public async Task<IActionResult> GetMyCases([FromQuery] StudentCasesQuery query, CancellationToken ct)
+        public async Task<IActionResult> GetMyCases(CancellationToken ct)
         {
             var studentId = User.FindFirst("Id")?.Value;
             if (string.IsNullOrWhiteSpace(studentId))
                 return Unauthorized();
 
-            var response = await _service.GetMyCasesAsync(studentId, query, ct);
+            var cases = await _service.GetMyCasesAsync(studentId, ct);
 
-            foreach (var item in response.Items)
+            foreach (var item in cases)
             {
                 item.ImageUrl = $"{Request.Scheme}://{Request.Host}{item.ImageUrl}";
 
@@ -68,7 +68,11 @@ namespace Brainova.PL.Controllers.Student
                     item.GradcamUrl = $"{Request.Scheme}://{Request.Host}{item.GradcamUrl}";
             }
 
-            return Ok(response);
+            return Ok(new
+            {
+                TotalCount = cases.Count,
+                Items = cases
+            });
         }
     }
 }

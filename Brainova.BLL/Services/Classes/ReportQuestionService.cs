@@ -4,6 +4,7 @@ using Brainova.BLL.Services.Interface;
 using Brainova.DAL.Enums;
 using Brainova.DAL.Modles;
 using Brainova.DAL.Repositories.Interface;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using System.Text.Json;
 
@@ -12,71 +13,155 @@ namespace Brainova.BLL.Services.Classes
     public class ReportQuestionService : IReportQuestionService
     {
         private readonly IUnitOfWork _uow;
+        private readonly UserManager<ApplicationUser> _userManager;
+        private readonly INotificationService _notifications;
 
-        public ReportQuestionService(IUnitOfWork uow)
+        public ReportQuestionService(
+            IUnitOfWork uow,
+            UserManager<ApplicationUser> userManager,
+            INotificationService notifications)
         {
             _uow = uow;
+            _userManager = userManager;
+            _notifications = notifications;
         }
 
-        public async Task AddAsync(CreateReportQuestionRequest req)
+        /// <summary>
+        /// Real-time push helper: notify every student of this supervisor that the
+        /// question set changed. Used by Add/Update/ToggleActive so students with
+        /// an open "Submit Report" page can re-fetch the questions list.
+        /// Best-effort — wrapped so SignalR failures never break the API.
+        /// </summary>
+        private async Task PushQuestionsChangedAsync(string supervisorId, CancellationToken ct = default)
         {
-            var repo = _uow.Repo<ReportQuestion>();
+            try
+            {
+                var studentIds = await _uow.Repo<ApplicationUser>()
+                    .Query()
+                    .Where(u => u.SupervisorUserId == supervisorId)
+                    .Select(u => u.Id)
+                    .ToListAsync(ct);
 
+                if (studentIds.Count > 0)
+                {
+                    await _notifications.NotifyStudentsQuestionsChangedAsync(studentIds, ct);
+                }
+            }
+            catch
+            {
+                // Best-effort.
+            }
+        }
+
+        public async Task AddAsync(string supervisorId, CreateReportQuestionRequest req)
+        {
+            await EnsureSupervisorExists(supervisorId);
+
+            var repo = _uow.Repo<ReportQuestion>();
             var normalizedCode = req.Code.Trim().ToLower();
 
-            bool exists = await repo.ExistsAsync(x => x.Code == normalizedCode);
+            bool exists = await repo.ExistsAsync(
+                x => x.SupervisorId == supervisorId && x.Code == normalizedCode);
+
             if (exists)
-                throw new BadRequestException("Question code already exists.");
+                throw new BadRequestException("Question code already exists for this supervisor.");
+
+            bool orderTaken = await repo.ExistsAsync(
+                x => x.SupervisorId == supervisorId && x.Order == req.Order);
+
+            if (orderTaken)
+                throw new BadRequestException($"Order {req.Order} is already used by another question for this supervisor.");
 
             ValidateQuestionRequest(req);
 
             var q = new ReportQuestion
             {
                 Id = Guid.NewGuid(),
+                SupervisorId = supervisorId,
                 Code = normalizedCode,
                 Text = req.Text.Trim(),
                 Type = req.Type,
                 Order = req.Order,
                 IsActive = req.IsActive,
-                IsRequired= req.IsRequired,
+                IsRequired = req.IsRequired,
+                SkipWhenNoTumor = req.SkipWhenNoTumor,
                 OptionsJson = req.Options != null && req.Options.Any()
-                    ? JsonSerializer.Serialize(req.Options.Select(x => x.Trim()).Where(x => !string.IsNullOrWhiteSpace(x)).ToList())
+                    ? JsonSerializer.Serialize(
+                        req.Options
+                            .Select(x => x.Trim())
+                            .Where(x => !string.IsNullOrWhiteSpace(x))
+                            .ToList())
                     : null
             };
 
             await repo.AddAsync(q);
             await _uow.SaveChangesAsync();
+
+            await PushQuestionsChangedAsync(supervisorId);
         }
 
-        public async Task<List<ReportQuestion>> GetActiveAsync()
+        public async Task<List<ReportQuestion>> GetActiveForStudentAsync(string studentId)
         {
+            var student = await _uow.Repo<ApplicationUser>()
+                .Query()
+                .FirstOrDefaultAsync(x => x.Id == studentId);
+
+            if (student == null)
+                throw new NotFoundException("Student not found");
+
+            if (string.IsNullOrWhiteSpace(student.SupervisorUserId))
+                throw new BadRequestException("Student has no assigned supervisor");
+
             return await _uow.Repo<ReportQuestion>()
                 .Query()
-                .Where(q => q.IsActive)
+                .Where(q => q.SupervisorId == student.SupervisorUserId && q.IsActive)
                 .OrderBy(q => q.Order)
                 .ToListAsync();
         }
 
-        public async Task<List<ReportQuestion>> GetAllAsync()
+        public async Task<List<ReportQuestion>> GetAllForSupervisorAsync(string supervisorId)
         {
+            await EnsureSupervisorExists(supervisorId);
+
             return await _uow.Repo<ReportQuestion>()
                 .Query()
+                .Where(q => q.SupervisorId == supervisorId)
                 .OrderBy(q => q.Order)
                 .ToListAsync();
         }
-        public async Task UpdateAsync(Guid id, UpdateReportQuestionRequest req)
+
+        public async Task UpdateAsync(string supervisorId, Guid id, UpdateReportQuestionRequest req)
         {
             var repo = _uow.Repo<ReportQuestion>();
+            var question = await repo.Query()
+                .FirstOrDefaultAsync(x => x.Id == id);
 
-            var question = await repo.GetByIdAsync(id);
             if (question == null)
                 throw new NotFoundException("Question not found");
 
+            if (question.SupervisorId != supervisorId)
+                throw new ForbiddenException("You are not allowed to update this question");
+
+            if (question.IsSystem)
+                throw new ForbiddenException("This is a system question and cannot be modified.");
+
             var normalizedCode = req.Code.Trim().ToLower();
 
-            var codeUsedByAnother = await repo.ExistsAsync(x => x.Code == normalizedCode && x.Id != id);
+            var codeUsedByAnother = await repo.ExistsAsync(
+                x => x.SupervisorId == supervisorId &&
+                     x.Code == normalizedCode &&
+                     x.Id != id);
+
             if (codeUsedByAnother)
-                throw new BadRequestException("Question code already exists.");
+                throw new BadRequestException("Question code already exists for this supervisor.");
+
+            var orderUsedByAnother = await repo.ExistsAsync(
+                x => x.SupervisorId == supervisorId &&
+                     x.Order == req.Order &&
+                     x.Id != id);
+
+            if (orderUsedByAnother)
+                throw new BadRequestException($"Order {req.Order} is already used by another question for this supervisor.");
 
             ValidateQuestionRequest(req);
 
@@ -86,29 +171,52 @@ namespace Brainova.BLL.Services.Classes
             question.Order = req.Order;
             question.IsActive = req.IsActive;
             question.IsRequired = req.IsRequired;
+            question.SkipWhenNoTumor = req.SkipWhenNoTumor;
             question.OptionsJson = req.Options != null && req.Options.Any()
                 ? JsonSerializer.Serialize(
                     req.Options
                         .Select(x => x.Trim().ToLower())
                         .Where(x => !string.IsNullOrWhiteSpace(x))
-                        .ToList()
-                  )
+                        .ToList())
                 : null;
 
             repo.Update(question);
             await _uow.SaveChangesAsync();
+
+            await PushQuestionsChangedAsync(supervisorId);
         }
-        public async Task ToggleActiveAsync(Guid id)
+
+        public async Task ToggleActiveAsync(string supervisorId, Guid id)
         {
-            var question = await _uow.Repo<ReportQuestion>().GetByIdAsync(id);
+            var repo = _uow.Repo<ReportQuestion>();
+            var question = await repo.Query()
+                .FirstOrDefaultAsync(x => x.Id == id);
 
             if (question == null)
                 throw new NotFoundException("Question not found");
 
-            question.IsActive = !question.IsActive;
-            _uow.Repo<ReportQuestion>().Update(question);
+            if (question.SupervisorId != supervisorId)
+                throw new ForbiddenException("You are not allowed to update this question");
 
+            if (question.IsSystem)
+                throw new ForbiddenException("This is a system question and cannot be deactivated.");
+
+            question.IsActive = !question.IsActive;
+            repo.Update(question);
             await _uow.SaveChangesAsync();
+
+            await PushQuestionsChangedAsync(supervisorId);
+        }
+
+        private async Task EnsureSupervisorExists(string supervisorId)
+        {
+            var supervisor = await _userManager.FindByIdAsync(supervisorId);
+            if (supervisor == null)
+                throw new NotFoundException("Supervisor not found");
+
+            var roles = await _userManager.GetRolesAsync(supervisor);
+            if (!roles.Contains("Supervisor"))
+                throw new BadRequestException("Invalid supervisor");
         }
 
         private static void ValidateQuestionRequest(CreateReportQuestionRequest req)
@@ -145,6 +253,7 @@ namespace Brainova.BLL.Services.Classes
                     throw new BadRequestException("Only single choice questions can have options.");
             }
         }
+
         private static void ValidateQuestionRequest(UpdateReportQuestionRequest req)
         {
             if (string.IsNullOrWhiteSpace(req.Code))
@@ -177,6 +286,162 @@ namespace Brainova.BLL.Services.Classes
             {
                 if (req.Options != null && req.Options.Any(x => !string.IsNullOrWhiteSpace(x)))
                     throw new BadRequestException("Only single choice questions can have options.");
+            }
+        }
+        public async Task SeedDefaultQuestionsForSupervisorAsync(string supervisorId, CancellationToken ct = default)
+        {
+            await EnsureSupervisorExists(supervisorId);
+
+            var repo = _uow.Repo<ReportQuestion>();
+
+            var alreadyHasQuestions = await repo.Query()
+                .AnyAsync(q => q.SupervisorId == supervisorId, ct);
+
+            if (alreadyHasQuestions)
+                return;
+
+            var defaultQuestions = new List<ReportQuestion>
+    {
+        new ReportQuestion
+        {
+            Id = Guid.NewGuid(),
+            SupervisorId = supervisorId,
+            Code = "preliminary assesment",
+            Text = "Based on your observation, what type of tumor do you think is shown in the MRI image?",
+            Type = ReportQuestionType.SingleChoice,
+            Order = 1,
+            IsActive = true,
+            IsRequired = true,
+            IsSystem = true,
+            OptionsJson = JsonSerializer.Serialize(new List<string>
+            {
+                "glioma",
+                "meningioma",
+                "pituitary",
+                "no tumor"
+            })
+        },
+        new ReportQuestion
+        {
+            Id = Guid.NewGuid(),
+            SupervisorId = supervisorId,
+            Code = "tumor size",
+            Text = "What is the approximate size of the tumor?",
+            Type = ReportQuestionType.SingleChoice,
+            Order = 2,
+            IsActive = true,
+            IsRequired = true,
+            SkipWhenNoTumor = true,
+            OptionsJson = JsonSerializer.Serialize(new List<string>
+            {
+                "small",
+                "medium",
+                "large"
+            })
+        },
+        new ReportQuestion
+        {
+            Id = Guid.NewGuid(),
+            SupervisorId = supervisorId,
+            Code = "tumor location",
+            Text = "In which area of the brain does the abnormality most likely appear?",
+            Type = ReportQuestionType.SingleChoice,
+            Order = 3,
+            IsActive = true,
+            IsRequired = true,
+            SkipWhenNoTumor = true,
+            OptionsJson = JsonSerializer.Serialize(new List<string>
+            {
+                "frontal",
+                "posterior",
+                "central",
+                "not clear"
+            })
+        },
+        new ReportQuestion
+        {
+            Id = Guid.NewGuid(),
+            SupervisorId = supervisorId,
+            Code = "functional impact",
+            Text = "Based on the tumor location, which brain function is most likely to be affected?",
+            Type = ReportQuestionType.Text,
+            Order = 4,
+            IsActive = true,
+            IsRequired = true,
+            SkipWhenNoTumor = true,
+            OptionsJson = null
+        },
+        new ReportQuestion
+        {
+            Id = Guid.NewGuid(),
+            SupervisorId = supervisorId,
+            Code = "additional explanation",
+            Text = "Would you like to further explain your reasoning?",
+            Type = ReportQuestionType.Text,
+            Order = 5,
+            IsActive = true,
+            IsRequired = false,
+            OptionsJson = null
+        }
+    };
+
+            foreach (var question in defaultQuestions)
+                await repo.AddAsync(question, ct);
+
+            await _uow.SaveChangesAsync(ct);
+        }
+        public async Task SeedSystemQuestionsForSupervisorAsync(string supervisorId, CancellationToken ct = default)
+        {
+            await EnsureSupervisorExists(supervisorId);
+
+            var repo = _uow.Repo<ReportQuestion>();
+
+            // Idempotent: only seed if this supervisor doesn't already have the
+            // preliminary assessment system question.
+            bool alreadyHasPreliminary = await repo.Query()
+                .AnyAsync(q => q.SupervisorId == supervisorId
+                            && q.Code == "preliminary assesment", ct);
+
+            if (alreadyHasPreliminary)
+                return;
+
+            var preliminary = new ReportQuestion
+            {
+                Id = Guid.NewGuid(),
+                SupervisorId = supervisorId,
+                Code = "preliminary assesment",
+                Text = "Based on your observation, what type of tumor do you think is shown in the MRI image?",
+                Type = ReportQuestionType.SingleChoice,
+                Order = 1,
+                IsActive = true,
+                IsRequired = true,
+                IsSystem = true,
+                OptionsJson = JsonSerializer.Serialize(new List<string>
+                {
+                    "glioma",
+                    "meningioma",
+                    "pituitary",
+                    "no tumor"
+                })
+            };
+
+            await repo.AddAsync(preliminary, ct);
+            await _uow.SaveChangesAsync(ct);
+        }
+
+        public async Task SeedDefaultQuestionsForAllExistingSupervisorsAsync(CancellationToken ct = default)
+        {
+            var users = await _uow.Repo<ApplicationUser>()
+                .Query()
+                .ToListAsync(ct);
+
+            foreach (var user in users)
+            {
+                var roles = await _userManager.GetRolesAsync(user);
+                if (!roles.Contains("Supervisor"))
+                    continue;
+
+                await SeedDefaultQuestionsForSupervisorAsync(user.Id, ct);
             }
         }
     }

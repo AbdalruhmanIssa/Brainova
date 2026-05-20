@@ -48,141 +48,47 @@ namespace Brainova.BLL.Services.Classes
             var entity = await _uow.Repo<MriCase>().GetByIdAsync(caseId, ct);
             return entity?.StoredFileName;
         }
-        public async Task<PagedResponse<StudentCaseDetailsResponse>>
-     GetMyCasesAsync(string studentId, StudentCasesQuery query, CancellationToken ct = default)
+        
+     public async Task<List<StudentCaseDetailsResponse>> GetMyCasesAsync(
+    string studentId,
+    CancellationToken ct = default)
         {
-            var baseQuery = _uow.Repo<MriCase>()
+            var cases = await _uow.Repo<MriCase>()
                 .Query()
                 .Where(c => c.StudentId == studentId)
-                .Include(c => c.AiResult);
-
-            var totalCount = await baseQuery.CountAsync(ct);
-            var cases = await baseQuery
-    .OrderByDescending(c => c.CreatedAt)
-    .Skip((query.Page - 1) * query.PageSize)
-    .Take(query.PageSize)
-    .Select(c => new
-    {
-        Case = c,
-
-        Report = _uow.Repo<Report>()
-            .Query()
-            .Where(r => r.CaseId == c.Id && r.StudentId == studentId)
-            .Select(r => new
-            {
-                r.Id,
-                r.SubmittedAt,
-
-                Feedback = _uow.Repo<Feedback>()
-                    .Query()
-                    .Where(f => f.ReportId == r.Id)
-                    .Select(f => new
-                    {
-                        f.Id,
-                        f.CreatedAt   // or SubmittedAt if you named it that
-                    })
-                    .FirstOrDefault()
-            })
-            .FirstOrDefault()
-    })
-    .ToListAsync(ct);
-
-            var items = cases.Select(x => new StudentCaseDetailsResponse
-            {
-                CaseId = x.Case.Id,
-                Status = x.Case.Status,
-
-                IsReportSubmitted =
-        x.Case.Status == CaseStatus.ReportSubmitted ||
-        x.Case.Status == CaseStatus.Predicted ||
-        x.Case.Status == CaseStatus.Reviewed,
-
-                IsPredicted =
-        x.Case.Status == CaseStatus.Predicted ||
-        x.Case.Status == CaseStatus.Reviewed,
-
-                IsReviewed = x.Case.Status == CaseStatus.Reviewed,
-
-                ReportId = x.Report?.Id,
-                ReportSubmittedAt = x.Report?.SubmittedAt,
-
-                // ✅ Feedback
-                FeedbackId = x.Report?.Feedback?.Id,
-                FeedbackSubmittedAt = x.Report?.Feedback?.CreatedAt,
-
-                PredictionResult = x.Case.AiResult?.PredictionResult,
-                PredictionCreatedAt = x.Case.AiResult?.CreatedAt,
-
-                CaseCreatedAt = x.Case.CreatedAt,
-
-                ImageUrl = $"/api/Student/MriCases/image/{x.Case.StoredFileName}",
-
-                GradcamUrl = x.Case.AiResult != null
-        ? $"/api/AiTumors/gradcam-image/{x.Case.AiResult.GradcamFileName}"
-        : null
-
-            }).ToList();
-
-            return new PagedResponse<StudentCaseDetailsResponse>
-            {
-                Page = query.Page,
-                PageSize = query.PageSize,
-                TotalCount = totalCount,
-                Items = items
-            };
-        }
-        public async Task<PagedResponse<SupervisorStudentCaseDetailsResponse>> GetSupervisorCasesAsync(
-          string supervisorId,
-          SupervisorCasesQuery query,
-          CancellationToken ct = default)
-        {
-            var baseQuery = _uow.Repo<MriCase>()
-                .Query()
-                .Include(c => c.Student)
+                .Where(c => c.Status == CaseStatus.Predicted || c.Status == CaseStatus.Reviewed)
                 .Include(c => c.AiResult)
-                .Where(c => c.Student.SupervisorUserId == supervisorId);
-
-            if (!string.IsNullOrWhiteSpace(query.StudentId))
-            {
-                baseQuery = baseQuery.Where(c => c.StudentId == query.StudentId);
-            }
-
-            var totalCount = await baseQuery.CountAsync(ct);
-
-            var cases = await baseQuery
                 .OrderByDescending(c => c.CreatedAt)
-                .Skip((query.Page - 1) * query.PageSize)
-                .Take(query.PageSize)
                 .Select(c => new
                 {
                     Case = c,
 
                     Report = _uow.Repo<Report>()
                         .Query()
-                        .Where(r => r.CaseId == c.Id && r.StudentId == c.StudentId)
+                        .Where(r => r.CaseId == c.Id && r.StudentId == studentId)
                         .Select(r => new
                         {
                             r.Id,
+                            r.ReportCode,
                             r.SubmittedAt,
-
 
                             Feedback = _uow.Repo<Feedback>()
                                 .Query()
-                                 .Where(f => f.ReportId == r.Id)
-                                .Select(f => new { f.Id, f.CreatedAt })
-                               .FirstOrDefault()
+                                .Where(f => f.ReportId == r.Id)
+                                .Select(f => new
+                                {
+                                    f.Id,
+                                    f.CreatedAt
+                                })
+                                .FirstOrDefault()
                         })
                         .FirstOrDefault()
                 })
                 .ToListAsync(ct);
 
-            var items = cases.Select(x => new SupervisorStudentCaseDetailsResponse
+            return cases.Select(x => new StudentCaseDetailsResponse
             {
                 CaseId = x.Case.Id,
-
-                StudentId = x.Case.StudentId,
-                StudentName = x.Case.Student.FullName,
-
                 Status = x.Case.Status,
 
                 IsReportSubmitted =
@@ -197,31 +103,129 @@ namespace Brainova.BLL.Services.Classes
                 IsReviewed = x.Case.Status == CaseStatus.Reviewed,
 
                 ReportId = x.Report?.Id,
-                ReportSubmittedAt = x.Report?.SubmittedAt,
+                ReportCode = x.Report?.ReportCode,
+                ReportSubmittedAt = x.Report?.SubmittedAt != null
+    ? TimeZoneInfo.ConvertTimeFromUtc(
+        x.Report.SubmittedAt,
+        TimeZoneInfo.FindSystemTimeZoneById("Asia/Hebron")
+    )
+    : (DateTime?)null,
 
                 FeedbackId = x.Report?.Feedback?.Id,
-                FeedbackSubmittedAt = x.Report?.Feedback?.CreatedAt,
+                FeedbackSubmittedAt = x.Report?.Feedback != null ? TimeZoneInfo.ConvertTimeFromUtc(
+                    x.Report.Feedback.CreatedAt,
+                    TimeZoneInfo.FindSystemTimeZoneById("Asia/Hebron")
+                ) : (DateTime?)null,
 
                 PredictionResult = x.Case.AiResult?.PredictionResult,
-                PredictionCreatedAt = x.Case.AiResult?.CreatedAt,
+                PredictionCreatedAt = x.Case.AiResult != null ? TimeZoneInfo.ConvertTimeFromUtc(
+                    x.Case.AiResult.CreatedAt,
+                    TimeZoneInfo.FindSystemTimeZoneById("Asia/Hebron")
+                ) : (DateTime?)null,
 
-                CaseCreatedAt = x.Case.CreatedAt,
+                CaseCreatedAt = TimeZoneInfo.ConvertTimeFromUtc(
+                    x.Case.CreatedAt,
+                    TimeZoneInfo.FindSystemTimeZoneById("Asia/Hebron")
+                ),
+
+                ImageUrl = $"/api/Student/MriCases/image/{x.Case.StoredFileName}",
+
+                GradcamUrl = x.Case.AiResult != null
+                    ? $"/api/AiTumors/gradcam-image/{x.Case.AiResult.GradcamFileName}"
+                    : null
+            }).ToList();
+        }
+
+        public async Task<List<SupervisorStudentCaseDetailsResponse>> GetSupervisorCasesAsync(
+        string supervisorId,
+        string? studentId = null,
+        CancellationToken ct = default)
+        {
+            var query = _uow.Repo<MriCase>()
+                .Query()
+                .Include(c => c.Student)
+                .Include(c => c.AiResult)
+                .Where(c => c.Student.SupervisorUserId == supervisorId)
+                .Where(c => c.Status == CaseStatus.Predicted || c.Status == CaseStatus.Reviewed);
+
+            if (!string.IsNullOrWhiteSpace(studentId))
+            {
+                query = query.Where(c => c.StudentId == studentId);
+            }
+
+            var cases = await query
+                .OrderByDescending(c => c.CreatedAt)
+                .Select(c => new
+                {
+                    Case = c,
+                    Report = _uow.Repo<Report>()
+                        .Query()
+                        .Where(r => r.CaseId == c.Id && r.StudentId == c.StudentId)
+                        .Select(r => new
+                        {
+                            r.Id,
+                            r.ReportCode,
+                            r.SubmittedAt,
+                            Feedback = _uow.Repo<Feedback>()
+                                .Query()
+                                .Where(f => f.ReportId == r.Id)
+                                .Select(f => new { f.Id, f.CreatedAt })
+                                .FirstOrDefault()
+                        })
+                        .FirstOrDefault()
+                })
+                .ToListAsync(ct);
+
+            return cases.Select(x => new SupervisorStudentCaseDetailsResponse
+            {
+                CaseId = x.Case.Id,
+                StudentId = x.Case.StudentId,
+                StudentName = x.Case.Student.FullName,
+                StudentEmail = x.Case.Student.Email,
+                Status = x.Case.Status,
+
+                IsReportSubmitted =
+                    x.Case.Status == CaseStatus.ReportSubmitted ||
+                    x.Case.Status == CaseStatus.Predicted ||
+                    x.Case.Status == CaseStatus.Reviewed,
+
+                IsPredicted =
+                    x.Case.Status == CaseStatus.Predicted ||
+                    x.Case.Status == CaseStatus.Reviewed,
+
+                IsReviewed = x.Case.Status == CaseStatus.Reviewed,
+
+                ReportId = x.Report?.Id,
+                ReportCode = x.Report?.ReportCode,
+                ReportSubmittedAt = x.Report != null ? TimeZoneInfo.ConvertTimeFromUtc(
+                    x.Report.SubmittedAt,
+                    TimeZoneInfo.FindSystemTimeZoneById("Asia/Hebron")
+                ) : (DateTime?)null,
+
+                FeedbackId = x.Report?.Feedback?.Id,
+                FeedbackSubmittedAt = x.Report?.Feedback != null ? TimeZoneInfo.ConvertTimeFromUtc(
+                    x.Report.Feedback.CreatedAt,
+                    TimeZoneInfo.FindSystemTimeZoneById("Asia/Hebron")
+                ) : (DateTime?)null,
+
+                PredictionResult = x.Case.AiResult?.PredictionResult,
+                PredictionCreatedAt = x.Case.AiResult != null ? TimeZoneInfo.ConvertTimeFromUtc(
+                    x.Case.AiResult.CreatedAt,
+                    TimeZoneInfo.FindSystemTimeZoneById("Asia/Hebron")
+                ) : (DateTime?)null,
+
+                CaseCreatedAt = TimeZoneInfo.ConvertTimeFromUtc(
+                    x.Case.CreatedAt,
+                    TimeZoneInfo.FindSystemTimeZoneById("Asia/Hebron")
+                ),
 
                 ImageUrl = $"/api/Student/MriCases/image/{x.Case.StoredFileName}",
                 GradcamUrl = x.Case.AiResult != null
                     ? $"/api/AiTumors/gradcam-image/{x.Case.AiResult.GradcamFileName}"
                     : null
             }).ToList();
-
-            return new PagedResponse<SupervisorStudentCaseDetailsResponse>
-            {
-                Page = query.Page,
-                PageSize = query.PageSize,
-                TotalCount = totalCount,
-                Items = items
-            };
         }
-
+     
 
     }
 }

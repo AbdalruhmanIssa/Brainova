@@ -12,12 +12,13 @@ namespace Brainova.BLL.Services.Interface
     {
         Task<MriUploadResponse> CreateAsync(string studentId, MriUploadRequest request, CancellationToken ct = default);
         Task<string?> GetStoredFileNameAsync(Guid caseId, CancellationToken ct = default);
-        Task<PagedResponse<StudentCaseDetailsResponse>>
-    GetMyCasesAsync(string studentId, StudentCasesQuery query, CancellationToken ct = default);
-        Task<PagedResponse<SupervisorStudentCaseDetailsResponse>> GetSupervisorCasesAsync(
-    string supervisorId,
-    SupervisorCasesQuery query,
-    CancellationToken ct = default);
+      
+      Task<List<StudentCaseDetailsResponse>> GetMyCasesAsync(string studentId, CancellationToken ct = default);
+        Task<List<SupervisorStudentCaseDetailsResponse>> GetSupervisorCasesAsync(
+        string supervisorId,
+        string? studentId = null,
+        CancellationToken ct = default);
+     
 
     }
 }

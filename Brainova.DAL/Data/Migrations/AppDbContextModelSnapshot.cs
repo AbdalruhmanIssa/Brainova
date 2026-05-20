@@ -185,6 +185,16 @@ namespace Brainova.DAL.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");
 
+                    b.Property<string>("ReportCode")
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<long>("ReportNumber")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("ReportNumber"));
+
                     b.Property<string>("StudentId")
                         .IsRequired()
                         .HasMaxLength(450)
@@ -197,6 +207,13 @@ namespace Brainova.DAL.Migrations
                         .HasColumnType("datetime2");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("ReportCode")
+                        .IsUnique()
+                        .HasFilter("[ReportCode] IS NOT NULL");
+
+                    b.HasIndex("ReportNumber")
+                        .IsUnique();
 
                     b.HasIndex("StudentId");
 
@@ -265,11 +282,25 @@ namespace Brainova.DAL.Migrations
                     b.Property<bool>("IsRequired")
                         .HasColumnType("bit");
 
+                    b.Property<bool>("IsSystem")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(false);
+
                     b.Property<string>("OptionsJson")
                         .HasColumnType("nvarchar(max)");
 
                     b.Property<int>("Order")
                         .HasColumnType("int");
+
+                    b.Property<bool>("SkipWhenNoTumor")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(false);
+
+                    b.Property<string>("SupervisorId")
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
 
                     b.Property<string>("Text")
                         .IsRequired()
@@ -284,8 +315,15 @@ namespace Brainova.DAL.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("Code")
-                        .IsUnique();
+                    b.HasIndex("SupervisorId");
+
+                    b.HasIndex("SupervisorId", "Code")
+                        .IsUnique()
+                        .HasFilter("[SupervisorId] IS NOT NULL");
+
+                    b.HasIndex("SupervisorId", "Order")
+                        .IsUnique()
+                        .HasFilter("[SupervisorId] IS NOT NULL");
 
                     b.ToTable("ReportQuestions", (string)null);
                 });
@@ -491,6 +529,16 @@ namespace Brainova.DAL.Migrations
                     b.Navigation("Question");
 
                     b.Navigation("Report");
+                });
+
+            modelBuilder.Entity("Brainova.DAL.Modles.ReportQuestion", b =>
+                {
+                    b.HasOne("Brainova.DAL.Modles.ApplicationUser", "Supervisor")
+                        .WithMany()
+                        .HasForeignKey("SupervisorId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("Supervisor");
                 });
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRoleClaim<string>", b =>

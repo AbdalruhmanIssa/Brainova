@@ -1,4 +1,5 @@
 ﻿using Brainova.DAL.Enums;
+using Microsoft.AspNetCore.Mvc;
 using System;
 using System.Collections.Generic;
 using System.Text;
@@ -10,7 +11,7 @@ namespace Brainova.BLL.DTOs.Response
     {
         public Guid CaseId { get; set; }
         public CaseStatus Status { get; set; }
-        public DateTime CreatedAt { get; set; }
+        public DateTime CreatedAt { get; set; }=DateTime.Now.ToLocalTime();
         [JsonIgnore]
         public string StoredFileName { get; set; } = default!;
         public string ImageUrl { get; set; } = default!;

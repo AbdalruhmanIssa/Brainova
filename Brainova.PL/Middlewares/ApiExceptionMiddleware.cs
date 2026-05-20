@@ -4,7 +4,7 @@ using System;
 using System.Collections.Generic;
 using System.Text;
 
-namespace Brainovaز.PL.Middlewares
+namespace Brainova.PL.Middlewares
 {
     public class ApiExceptionMiddleware
     {
@@ -27,17 +27,21 @@ namespace Brainovaز.PL.Middlewares
                     message = ex.Message
                 });
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                Console.WriteLine(ex.ToString());
+
                 context.Response.StatusCode = 500;
                 context.Response.ContentType = "application/json";
                 await context.Response.WriteAsJsonAsync(new
                 {
                     success = false,
-                    message = "Unexpected server error."
+                    message = ex.Message,
+                    detail = ex.InnerException?.Message
                 });
             }
         }
+        }
     }
 
-}
+

@@ -12,6 +12,8 @@ namespace Brainova.DAL.Modles
         public ApplicationUser Student { get; set; } = default!;
 
         public DateTime SubmittedAt { get; set; }
+        public long ReportNumber { get; set; }   // DB-generated sequence number
+        public string? ReportCode { get; set; }
 
         public ICollection<ReportAnswer> Answers { get; set; } = new List<ReportAnswer>();
     }

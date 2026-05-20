@@ -108,14 +108,14 @@ namespace Brainova.BLL.Services.Classes
                         {
                             c.Item().Text($"Student Name: {model.StudentName}").SemiBold();
                             c.Item().Text($"Supervisor Name: {model.SupervisorName}");
-                            c.Item().Text($"Submitted At: {FormatDate(model.SubmittedAt)}");
+                            c.Item().Text($"Submitted At: {model.SubmittedAt}");
                         });
 
                         row.RelativeItem().Column(c =>
                         {
-                            c.Item().Text($"Case Created: {FormatNullableDate(model.CaseCreatedAt)}");
-                            c.Item().Text($"Prediction Created: {FormatNullableDate(model.PredictionCreatedAt)}");
-                            c.Item().Text($"Case ID: {model.CaseId}");
+                            c.Item().Text($"Case Created: {model.CaseCreatedAt}");
+                            c.Item().Text($"Prediction Created: {model.PredictionCreatedAt}");
+                            c.Item().Text($"Report Code: {model.ReportCode ?? "N/A"}");
                         });
                     });
                 });
@@ -232,11 +232,6 @@ namespace Brainova.BLL.Services.Classes
             });
         }
 
-        private static string FormatDate(DateTime value)
-            => value.ToLocalTime().ToString("dd MMM yyyy - hh:mm tt");
-
-        private static string FormatNullableDate(DateTime? value)
-            => value.HasValue ? value.Value.ToLocalTime().ToString("dd MMM yyyy - hh:mm tt") : "N/A";
 
         private static string FormatAnswer(ReportPdfAnswerResponse answer)
         {

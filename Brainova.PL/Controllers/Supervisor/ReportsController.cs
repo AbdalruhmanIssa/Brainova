@@ -23,21 +23,22 @@ namespace Brainova.PL.Controllers.Supervisor
         }
 
         // GET: api/Supervisor/Reports/new
-  
         [HttpGet("new")]
-        public async Task<IActionResult> GetNew(
-    [FromQuery] int page = 1,
-    [FromQuery] int pageSize = 10)
+        public async Task<IActionResult> GetNew()
         {
             var supervisorId = User.FindFirst("Id")?.Value;
             if (string.IsNullOrWhiteSpace(supervisorId))
                 return Unauthorized();
 
-            var reports = await _svc.GetNewForSupervisorAsync(supervisorId, page, pageSize);
-            return Ok(reports);
+            var reports = await _svc.GetNewForSupervisorAsync(supervisorId);
+
+            return Ok(new
+            {
+                TotalCount = reports.Count,
+                Items = reports
+            });
         }
 
-        // GET api/Supervisor/Reports/{reportId}/details
         // GET api/Supervisor/Reports/{reportId}/details
         [HttpGet("{reportId:guid}/details")]
         public async Task<IActionResult> GetDetails(Guid reportId)
@@ -63,11 +64,14 @@ namespace Brainova.PL.Controllers.Supervisor
             var dto = new SupervisorReportDetailsResponse
             {
                 ReportId = raw.ReportId,
+                ReportCode=raw.ReportCode,
                 CaseId = raw.CaseId,
                 StudentId = raw.StudentId,
                 StudentName = raw.StudentName,
+                StudentEmail = raw.StudentEmail,
                 SubmittedAt = raw.SubmittedAt,
                 PredictionResult = raw.PredictionResult,
+                Probabilities = raw.Probabilities,
                 MriImageUrl = imageUrl,
                 Answers = raw.Answers
             };

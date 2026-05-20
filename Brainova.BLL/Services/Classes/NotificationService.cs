@@ -186,6 +186,35 @@ namespace Brainova.BLL.Services.Classes
                 ct);
         }
 
+        public Task NotifySupervisorFeedbackChangedAsync(
+            string supervisorId,
+            string kind,
+            Guid feedbackId,
+            Guid reportId,
+            CancellationToken ct = default)
+        {
+            if (string.IsNullOrWhiteSpace(supervisorId)) return Task.CompletedTask;
+
+            return _hub.Clients.User(supervisorId).SendAsync(
+                "SupervisorFeedbackChanged",
+                new { kind, feedbackId, reportId },
+                ct);
+        }
+
+        public Task NotifySupervisorFeedbackSeenAsync(
+            string supervisorId,
+            Guid? feedbackId,
+            Guid? reportId,
+            CancellationToken ct = default)
+        {
+            if (string.IsNullOrWhiteSpace(supervisorId)) return Task.CompletedTask;
+
+            return _hub.Clients.User(supervisorId).SendAsync(
+                "FeedbackSeenByStudent",
+                new { feedbackId, reportId },
+                ct);
+        }
+
         public Task NotifyAdminsUserListChangedAsync(
             UserListChangePayload payload,
             CancellationToken ct = default)

@@ -120,6 +120,14 @@ namespace Brainova.BLL.Services.Classes
                     report.StudentId,
                     payload,
                     unseenCount);
+
+                // Also push to the supervisor themselves so their feedback list
+                // (and any other tabs of theirs) refreshes live.
+                await _notifications.NotifySupervisorFeedbackChangedAsync(
+                    supervisorId,
+                    kind: "Added",
+                    feedbackId: feedback.Id,
+                    reportId: report.Id);
             }
             catch
             {
@@ -416,8 +424,9 @@ GetUnseenForStudentAsync(string studentId, CancellationToken ct = default)
             await _uow.SaveChangesAsync(ct);
 
             // -----------------------------------------------------------
-            // Real-time push: keep other tabs/devices of this student in
-            // sync so the bell badge drops without manual refresh.
+            // Real-time pushes:
+            //  1. Student's own tabs/devices → bell badge drops.
+            //  2. Supervisor → their feedback list reflects isSeen=true live.
             // -----------------------------------------------------------
             try
             {
@@ -428,6 +437,12 @@ GetUnseenForStudentAsync(string studentId, CancellationToken ct = default)
                 await _notifications.NotifyStudentUnseenCountAsync(
                     studentId,
                     unseenCount,
+                    ct);
+
+                await _notifications.NotifySupervisorFeedbackSeenAsync(
+                    feedback.SupervisorId,
+                    feedback.Id,
+                    feedback.ReportId,
                     ct);
             }
             catch
@@ -447,14 +462,26 @@ GetUnseenForStudentAsync(string studentId, CancellationToken ct = default)
             if (!feedbacks.Any())
                 return;
 
+            // Capture distinct supervisor ids BEFORE we save — every supervisor
+            // whose feedback was in this batch needs to be told.
+            var affectedSupervisorIds = feedbacks
+                .Select(f => f.SupervisorId)
+                .Where(id => !string.IsNullOrWhiteSpace(id))
+                .Distinct()
+                .ToList();
+
             foreach (var feedback in feedbacks)
                 feedback.IsSeen = true;
 
             await _uow.SaveChangesAsync(ct);
 
             // -----------------------------------------------------------
-            // Real-time push: unseen count is now zero — broadcast it so
-            // every open device of this student clears the bell badge.
+            // Real-time pushes:
+            //  1. Student's own devices → bell badge clears.
+            //  2. Each affected supervisor → their feedback list re-syncs
+            //     isSeen for the feedbacks they own. We send one event per
+            //     supervisor with null feedbackId/reportId meaning "refresh
+            //     everything" — supervisor side handles via list invalidation.
             // -----------------------------------------------------------
             try
             {
@@ -462,6 +489,15 @@ GetUnseenForStudentAsync(string studentId, CancellationToken ct = default)
                     studentId,
                     unseenCount: 0,
                     ct);
+
+                foreach (var supId in affectedSupervisorIds)
+                {
+                    await _notifications.NotifySupervisorFeedbackSeenAsync(
+                        supId,
+                        feedbackId: null,
+                        reportId: null,
+                        ct);
+                }
             }
             catch
             {
@@ -627,6 +663,14 @@ GetUnseenForStudentAsync(string studentId, CancellationToken ct = default)
                     payload,
                     unseenCount,
                     ct);
+
+                // Also push to the supervisor — their list view should refresh.
+                await _notifications.NotifySupervisorFeedbackChangedAsync(
+                    supervisorId,
+                    kind: "Updated",
+                    feedbackId: feedback.Id,
+                    reportId: feedback.ReportId,
+                    ct);
             }
             catch
             {
@@ -690,6 +734,14 @@ GetUnseenForStudentAsync(string studentId, CancellationToken ct = default)
                     removedFeedbackId,
                     removedReportId,
                     unseenCount,
+                    ct);
+
+                // Also push to the supervisor — their list view should drop the row.
+                await _notifications.NotifySupervisorFeedbackChangedAsync(
+                    supervisorId,
+                    kind: "Deleted",
+                    feedbackId: removedFeedbackId,
+                    reportId: removedReportId,
                     ct);
             }
             catch

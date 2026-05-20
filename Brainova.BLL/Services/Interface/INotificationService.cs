@@ -126,6 +126,32 @@ namespace Brainova.BLL.Services.Interface
             CancellationToken ct = default);
 
         /// <summary>
+        /// Notify a supervisor that one of THEIR feedbacks changed because they
+        /// (or one of their other tabs) added / edited / deleted it. Lets the
+        /// supervisor's own feedback list re-fetch live across tabs/devices.
+        /// Client event name: <c>"SupervisorFeedbackChanged"</c>.
+        /// Payload kind: "Added" | "Updated" | "Deleted".
+        /// </summary>
+        Task NotifySupervisorFeedbackChangedAsync(
+            string supervisorId,
+            string kind,
+            Guid feedbackId,
+            Guid reportId,
+            CancellationToken ct = default);
+
+        /// <summary>
+        /// Notify the supervisor that the student read (or read all of)
+        /// the feedbacks they sent. Lets the supervisor's feedback list
+        /// reflect <c>isSeen=true</c> live without polling.
+        /// Client event name: <c>"FeedbackSeenByStudent"</c>.
+        /// </summary>
+        Task NotifySupervisorFeedbackSeenAsync(
+            string supervisorId,
+            Guid? feedbackId,
+            Guid? reportId,
+            CancellationToken ct = default);
+
+        /// <summary>
         /// Broadcast to admins + super-admins that the user list changed
         /// (created / deleted / blocked / unblocked / role-changed / edited).
         /// Payload carries <c>kind</c>, the affected user's id (+ optional name/role),

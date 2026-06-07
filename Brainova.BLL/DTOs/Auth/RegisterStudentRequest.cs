@@ -1,4 +1,5 @@
 ﻿using System.ComponentModel.DataAnnotations;
+using Brainova.BLL.Validation;
 
 namespace Brainova.BLL.DTOs.Auth
 {
@@ -7,7 +8,7 @@ namespace Brainova.BLL.DTOs.Auth
         [Required, MinLength(3), MaxLength(80)]
         public string FullName { get; set; } = null!;
 
-        [Required, EmailAddress, MaxLength(120)]
+        [Required, EmailAddress, MaxLength(120), PtukEmail]
         public string Email { get; set; } = null!;
 
         [Required, MinLength(3), MaxLength(30)]

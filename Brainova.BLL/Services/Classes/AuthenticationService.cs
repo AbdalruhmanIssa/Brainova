@@ -1,4 +1,5 @@
 ﻿using Brainova.BLL.DTOs.Auth;
+using Brainova.BLL.DTOs.Realtime;
 using Brainova.BLL.Exceptions;
 using Brainova.BLL.Services.Interface;
 using Brainova.DAL.Modles;
@@ -18,17 +19,20 @@ namespace Brainova.BLL.Services.Classes
         private readonly IConfiguration _configuration;
         private readonly IEmailSender _emailSender;
         private readonly SignInManager<ApplicationUser> _signInManager;
+        private readonly INotificationService _notifications;
 
         public AuthenticationService(
             UserManager<ApplicationUser> userManager,
             IConfiguration configuration,
             IEmailSender emailSender,
-            SignInManager<ApplicationUser> signInManager)
+            SignInManager<ApplicationUser> signInManager,
+            INotificationService notifications)
         {
             _userManager = userManager;
             _configuration = configuration;
             _emailSender = emailSender;
             _signInManager = signInManager;
+            _notifications = notifications;
         }
 
         public async Task<UserResponse> LoginAsync(LoginRequest request)
@@ -167,7 +171,7 @@ namespace Brainova.BLL.Services.Classes
             var escaped = Uri.EscapeDataString(token);
 
             var confirmUrl =
-                $"{httpRequest.Scheme}://{httpRequest.Host}/api/Identity/Auths/confirm-email?token={escaped}&userId={user.Id}";
+                $"https://brainovaproject.onrender.com/auth/confirm-email?token={escaped}&userId={user.Id}";
 
             await _emailSender.SendEmailAsync(
                 user.Email!,
@@ -176,6 +180,37 @@ namespace Brainova.BLL.Services.Classes
                 $"<p>Please confirm your email:</p>" +
                 $"<a href='{confirmUrl}'>Confirm Email</a>"
             );
+
+            // -----------------------------------------------------------
+            // Real-time pushes:
+            //  1. Admins + super-admins → user-management table gains a row.
+            //  2. The student's chosen supervisor → /Supervisor/Students gains
+            //     a row.
+            // Self-registration has no acting admin, so ByUserId is null.
+            // Best-effort: a SignalR failure must not roll back the registration.
+            // -----------------------------------------------------------
+            try
+            {
+                await _notifications.NotifyAdminsUserListChangedAsync(new UserListChangePayload
+                {
+                    Kind = UserListChangeKinds.Created,
+                    UserId = user.Id,
+                    UserName = user.UserName,
+                    FullName = user.FullName,
+                    Role = "Student",
+                    ByUserId = null
+                });
+
+                if (!string.IsNullOrWhiteSpace(user.SupervisorUserId))
+                {
+                    await _notifications.NotifySupervisorStudentsChangedAsync(
+                        user.SupervisorUserId);
+                }
+            }
+            catch
+            {
+                // Best-effort.
+            }
 
             return "Registration successful. Please check your email to confirm your account.";
         }
@@ -191,6 +226,30 @@ namespace Brainova.BLL.Services.Classes
 
             if (!result.Succeeded)
                 throw new BadRequestException("Email confirmation failed");
+
+            // -----------------------------------------------------------
+            // Real-time push: admins + super-admins see the EmailConfirmed
+            // column flip live without refreshing the user-management table.
+            // Best-effort — confirmation already committed in the DB.
+            // -----------------------------------------------------------
+            try
+            {
+                var roles = await _userManager.GetRolesAsync(user);
+
+                await _notifications.NotifyAdminsUserListChangedAsync(new UserListChangePayload
+                {
+                    Kind = UserListChangeKinds.EmailConfirmed,
+                    UserId = user.Id,
+                    UserName = user.UserName,
+                    FullName = user.FullName,
+                    Role = roles.FirstOrDefault(),
+                    ByUserId = null  // self-action via email link, no admin involved
+                });
+            }
+            catch
+            {
+                // Best-effort.
+            }
 
             return "Email confirmed successfully";
         }
@@ -274,7 +333,7 @@ namespace Brainova.BLL.Services.Classes
 
             if (!result.Succeeded)
                 throw new BadRequestException(string.Join(";", result.Errors.Select(e => e.Description)));
-            
+
             await _emailSender.SendEmailAsync(
                 user.Email!,
                 "Brainova - Password set",
@@ -282,6 +341,32 @@ namespace Brainova.BLL.Services.Classes
             );
             var emailToken = await _userManager.GenerateEmailConfirmationTokenAsync(user);
             await _userManager.ConfirmEmailAsync(user, emailToken);
+
+            // -----------------------------------------------------------
+            // Real-time push: SetPassword also confirms the email as part of
+            // the flow, so this is semantically identical to ConfirmEmailAsync —
+            // admins + super-admins see the EmailConfirmed column flip live.
+            // Best-effort — the password is already set in the DB.
+            // -----------------------------------------------------------
+            try
+            {
+                var roles = await _userManager.GetRolesAsync(user);
+
+                await _notifications.NotifyAdminsUserListChangedAsync(new UserListChangePayload
+                {
+                    Kind = UserListChangeKinds.EmailConfirmed,
+                    UserId = user.Id,
+                    UserName = user.UserName,
+                    FullName = user.FullName,
+                    Role = roles.FirstOrDefault(),
+                    ByUserId = null  // self-action via email link, no admin involved
+                });
+            }
+            catch
+            {
+                // Best-effort.
+            }
+
             return "Password set successfully.";
         }
 

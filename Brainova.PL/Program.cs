@@ -235,6 +235,33 @@ builder.Services.AddHttpContextAccessor();
 // Add services to the container.
 
 builder.Services.AddControllers();
+
+// ==============================
+// Model-validation errors (DataAnnotations like [Required], [PtukEmail], etc.)
+// run BEFORE the controller/exception middleware, so by default ASP.NET returns
+// its RFC ProblemDetails shape. Override it to match our standard error body:
+//   { "success": false, "message": "..." }
+// We surface the first validation message so the frontend can show it directly.
+// ==============================
+builder.Services.Configure<Microsoft.AspNetCore.Mvc.ApiBehaviorOptions>(options =>
+{
+    options.InvalidModelStateResponseFactory = context =>
+    {
+        var message = context.ModelState
+            .Where(kvp => kvp.Value?.Errors.Count > 0)
+            .SelectMany(kvp => kvp.Value!.Errors)
+            .Select(e => e.ErrorMessage)
+            .FirstOrDefault(m => !string.IsNullOrWhiteSpace(m))
+            ?? "Invalid request.";
+
+        return new Microsoft.AspNetCore.Mvc.BadRequestObjectResult(new
+        {
+            success = false,
+            message
+        });
+    };
+});
+
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddOpenApi();
 

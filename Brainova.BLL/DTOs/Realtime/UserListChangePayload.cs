@@ -13,6 +13,7 @@ namespace Brainova.BLL.DTOs.Realtime
         public const string Unblocked = "Unblocked";
         public const string RoleChanged = "RoleChanged";
         public const string Deleted = "Deleted";
+        public const string EmailConfirmed = "EmailConfirmed";
     }
 
     /// <summary>

@@ -7,7 +7,7 @@ namespace Brainova.BLL.Services.Interface
     {
         Task<string> AddAsync(string supervisorId, Guid reportId, CreateFeedbackRequest request);
 
-        Task<FeedbackResponse> GetForSupervisorAsync(string supervisorId, Guid reportId);
+        Task<FeedbackResponse?> GetForSupervisorAsync(string supervisorId, Guid reportId);
 
         Task<FeedbackResponse> GetForStudentAsync(string studentId, Guid reportId);
 

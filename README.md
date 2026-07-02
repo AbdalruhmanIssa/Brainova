@@ -213,9 +213,7 @@ Brainova/
 │   ├── Enums/                    #   CaseStatus, ReportQuestionType
 │   ├── Repositories/             #   Generic repository + Unit of Work
 │   └── Utilites/                 #   SeedData (roles, users, migration on boot)
-│
-└── Documentation/
-    └── Diagrams/                 #   ERD & class diagrams
+
 ```
 
 ---

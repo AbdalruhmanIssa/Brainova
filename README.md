@@ -397,7 +397,7 @@ ApplicationUser (Identity) ──< MriCase ──1 AiResult
 | `ReportQuestion` | Supervisor-authored questionnaire item (typed via `ReportQuestionType`, toggleable) |
 | `Feedback` | Supervisor's comments on a report, with seen/unseen tracking |
 
-![ERD](Documentation/Diagrams/2_ERD.png)
+
 
 ---
 
@@ -446,7 +446,7 @@ Settings come from `appsettings.json`, overridable by environment variables (pro
 | `Smtp:*` | — | Host, port, SSL, credentials for identity emails |
 | *(hosting)* | `PORT` | Listen port for PaaS platforms (defaults to 8080) |
 
-> 🔒 Never commit real secrets — use environment variables or user-secrets in production.
+
 
 ---
 
@@ -463,7 +463,6 @@ The API is deployed on **Azure App Service** (primary) with a **MonsterASP** mir
 
 ## 📚 Documentation
 
-- 🗂 `Documentation/Diagrams/` — ERD and design class diagrams (PNG + SVG).
 - 🤖 [AI service deep-dive](https://github.com/AbdalruhmanIssa/Brainova_AI) — model training, Grad-CAM implementation, and Cloud Run deployment.
 - 📖 **Full API documentation — coming soon.**
 

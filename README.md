@@ -471,7 +471,7 @@ Brainova was built as a **graduation project** by the Brainova team:
 
 | Area | Repo / Owner |
 |---|---|
-| Backend & AI service | [@AbdalruhmanIssa](https://github.com/AbdalruhmanIssa) — [Brainova](https://github.com/AbdalruhmanIssa/Brainova) · [Brainova_AI](https://github.com/AbdalruhmanIssa/Brainova_AI) |
+| Backend, AI service & API docs | [@AbdalruhmanIssa](https://github.com/AbdalruhmanIssa) — [Brainova](https://github.com/AbdalruhmanIssa/Brainova) · [Brainova_AI](https://github.com/AbdalruhmanIssa/Brainova_AI) · [API Documentation](https://documenter.getpostman.com/view/42948249/2sBXcHiyt3) |
 | Backend & AI service | [@taima97](https://github.com/taima97) |
 | Frontend | [@rahafashqar](https://github.com/rahafashqar) — [Brainova](https://github.com/rahafashqar/Brainova) · [@shathazyadeh](https://github.com/shathazyadeh) — [BrainovaProject](https://github.com/shathazyadeh/BrainovaProject) |
 

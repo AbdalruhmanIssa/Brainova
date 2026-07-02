@@ -13,7 +13,7 @@
 [![JWT](https://img.shields.io/badge/Auth-JWT%20%2B%20Cookies-000000?logo=jsonwebtokens&logoColor=white)](https://jwt.io/)
 [![Azure](https://img.shields.io/badge/Deployed-Azure%20App%20Service-0078D4?logo=microsoftazure&logoColor=white)](https://azure.microsoft.com/)
 
-**[🌐 Live App](https://brainovaproject.onrender.com/home)** · **[⚡ API (Azure)](https://brainova-backend-grb6egdgg2d8epdw.israelcentral-01.azurewebsites.net)** · **[⚡ API (Mirror)](http://brainova.runasp.net/)** · **[🤖 AI Service Repo](https://github.com/AbdalruhmanIssa/Brainova_AI)**
+**[🌐 Live App](https://brainovaproject.onrender.com/home)** · **[📚 API Docs](https://documenter.getpostman.com/view/42948249/2sBXcHiyt3)** · **[⚡ API (Azure)](https://brainova-backend-grb6egdgg2d8epdw.israelcentral-01.azurewebsites.net)** · **[⚡ API (Mirror)](http://brainova.runasp.net/)** · **[🤖 AI Service Repo](https://github.com/AbdalruhmanIssa/Brainova_AI)**
 
 </div>
 
@@ -86,7 +86,7 @@ The frontend **never** talks to the AI service directly — every prediction flo
 | ⚡ **Backend API — MonsterASP mirror** | <http://brainova.runasp.net/> |
 | 🤖 **AI Service — Google Cloud Run** | <https://brainova-ai-1031567223264.europe-west1.run.app/docs> |
 
-> 📚 Full interactive API documentation is coming soon. In local development the API self-documents via **OpenAPI + Scalar** at `/scalar`.
+> 📚 **[Full REST API documentation (Postman)](https://documenter.getpostman.com/view/42948249/2sBXcHiyt3)** — request/response examples with ready-to-copy snippets in 20+ languages. In local development the API also self-documents via **OpenAPI + Scalar** at `/scalar`.
 
 ---
 
@@ -447,7 +447,6 @@ Settings come from `appsettings.json`, overridable by environment variables (pro
 | *(hosting)* | `PORT` | Listen port for PaaS platforms (defaults to 8080) |
 
 
-
 ---
 
 ## ☁️ Deployment Notes
@@ -463,8 +462,8 @@ The API is deployed on **Azure App Service** (primary) with a **MonsterASP** mir
 
 ## 📚 Documentation
 
+- 📖 **[REST API Documentation (Postman)](https://documenter.getpostman.com/view/42948249/2sBXcHiyt3)** — every endpoint with example requests, responses, and code snippets, pre-wired to the live Azure API.
 - 🤖 [AI service deep-dive](https://github.com/AbdalruhmanIssa/Brainova_AI) — model training, Grad-CAM implementation, and Cloud Run deployment.
-- 📖 **Full API documentation — coming soon.**
 
 ---
 

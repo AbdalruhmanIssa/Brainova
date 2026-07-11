@@ -49,6 +49,11 @@ namespace Brainova.DAL.Utilities
                     await _roleManager.CreateAsync(new IdentityRole(role));
             }
 
+            // ✅ Only seed users when the DB has no users at all.
+            // This prevents re-seeding when a seeded user's info (email, etc.) is edited.
+            if (await _userManager.Users.AnyAsync())
+                return;
+
             // 2️⃣ Seed Supervisor FIRST (so we can assign students to him)
             var supervisor = await CreateUserIfNotExists(
                 email: "supervisor@brainova.com",

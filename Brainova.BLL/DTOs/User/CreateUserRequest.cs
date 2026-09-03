@@ -2,7 +2,6 @@
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.Text;
-using Brainova.BLL.Validation;
 
 namespace Brainova.BLL.DTOs.User
 {
@@ -10,7 +9,7 @@ namespace Brainova.BLL.DTOs.User
     {
         [Required, MinLength(3), MaxLength(80)]
         public string FullName { get; set; } = null!;
-        [Required, EmailAddress, MaxLength(120), PtukEmail]
+        [Required, EmailAddress, MaxLength(120)]
         public string Email { get; set; } = null!;
         [Required, MinLength(3), MaxLength(30)]
         public string UserName { get; set; } = null!;

@@ -1,4 +1,4 @@
-using Brainova.BLL.Exceptions;
+﻿using Brainova.BLL.Exceptions;
 using Brainova.BLL.Hubs;
 using Brainova.BLL.Services.Classes;
 using Brainova.BLL.Services.Interface;
@@ -237,7 +237,7 @@ builder.Services.AddHttpContextAccessor();
 builder.Services.AddControllers();
 
 // ==============================
-// Model-validation errors (DataAnnotations like [Required], [PtukEmail], etc.)
+// Model-validation errors (DataAnnotations like [Required], [EmailAddress], etc.)
 // run BEFORE the controller/exception middleware, so by default ASP.NET returns
 // its RFC ProblemDetails shape. Override it to match our standard error body:
 //   { "success": false, "message": "..." }

@@ -113,9 +113,16 @@ builder.Services.AddCors(options =>
             .AllowCredentials()
     );
 });
-// Database configuration - read from environment variables or appsettings
+// Database configuration - environment variables first, then user-secrets / appsettings
 var connectionString = Environment.GetEnvironmentVariable("DB_CONNECTION_STRING")
     ?? builder.Configuration.GetConnectionString("Default");
+
+if (string.IsNullOrWhiteSpace(connectionString))
+    throw new InvalidOperationException(
+        "No database connection string is configured. " +
+        "Local development: dotnet user-secrets set \"ConnectionStrings:Default\" \"<connection string>\". " +
+        "Production: set the DB_CONNECTION_STRING (or ConnectionStrings__Default) environment variable. " +
+        "See the Configuration section of README.md.");
 
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseSqlServer(connectionString));
@@ -157,7 +164,15 @@ builder.Services
     {
         var jwt = builder.Configuration.GetSection("jwtOptions");
 
-        var secretBase64 = jwt["SecretKey"]!;
+        var secretBase64 = jwt["SecretKey"];
+        if (string.IsNullOrWhiteSpace(secretBase64))
+            throw new InvalidOperationException(
+                "No JWT signing key is configured. " +
+                "Local development: dotnet user-secrets set \"jwtOptions:SecretKey\" \"<base64 key>\". " +
+                "Production: set the jwtOptions__SecretKey environment variable. " +
+                "Generate one with: openssl rand -base64 32. " +
+                "See the Configuration section of README.md.");
+
         var keyBytes = Convert.FromBase64String(secretBase64);
 
         options.TokenValidationParameters = new TokenValidationParameters

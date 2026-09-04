@@ -17,12 +17,12 @@ namespace Brainova.PL.uti
 
         public async Task SendEmailAsync(string email, string subject, string htmlMessage)
         {
-            var host = _configuration["Smtp:Host"];
-            var port = int.Parse(_configuration["Smtp:Port"]!);
-            var enableSsl = bool.Parse(_configuration["Smtp:EnableSsl"]!);
-            var user = _configuration["Smtp:User"];
-            var pass = _configuration["Smtp:AppPassword"];
-            var from = _configuration["Smtp:From"];
+            var host = Require("Smtp:Host");
+            var port = int.Parse(Require("Smtp:Port"));
+            var enableSsl = bool.Parse(Require("Smtp:EnableSsl"));
+            var user = Require("Smtp:User");
+            var pass = Require("Smtp:AppPassword");
+            var from = Require("Smtp:From");
 
             using var client = new SmtpClient(host, port)
             {
@@ -39,5 +39,18 @@ namespace Brainova.PL.uti
             await client.SendMailAsync(message);
         }
 
+        private string Require(string key)
+        {
+            var value = _configuration[key];
+
+            if (string.IsNullOrWhiteSpace(value))
+                throw new InvalidOperationException(
+                    $"SMTP configuration '{key}' is missing. " +
+                    $"Local development: dotnet user-secrets set \"{key}\" \"<value>\". " +
+                    $"Production: set the {key.Replace(":", "__")} environment variable. " +
+                    "See the Configuration section of README.md.");
+
+            return value;
+        }
     }
 }

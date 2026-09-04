@@ -415,7 +415,14 @@ git clone https://github.com/AbdalruhmanIssa/Brainova.git
 cd Brainova
 
 # 2. Configure  (see Configuration section below)
-#    Edit Brainova.PL/appsettings.json → connection string, JWT secret, SMTP
+#    Secrets are NOT in appsettings.json - store them with user-secrets
+cd Brainova.PL
+dotnet user-secrets set "ConnectionStrings:Default" "<your SQL Server connection string>"
+dotnet user-secrets set "jwtOptions:SecretKey"      "$(openssl rand -base64 32)"
+dotnet user-secrets set "Smtp:User"                 "<gmail address>"
+dotnet user-secrets set "Smtp:AppPassword"          "<gmail app password>"
+dotnet user-secrets set "Smtp:From"                 "Brainova <gmail address>"
+cd ..
 
 # 3. Run — migrations, roles, and starter users are seeded automatically
 dotnet run --project Brainova.PL
@@ -433,16 +440,52 @@ Open `Brainova.slnx` in Visual Studio 2026 / Rider — three projects: `Brainova
 
 ## ⚙️ Configuration
 
-Settings come from `appsettings.json`, overridable by environment variables (production):
+**No secret is ever committed.** `appsettings.json` is tracked in git and ships with the
+secret values left empty — it documents the shape, nothing more. Real values come from the
+ASP.NET configuration provider chain, which resolves in this order (last one wins):
 
-| Setting | Env var | Description |
+```
+appsettings.json  →  appsettings.{Environment}.json  →  user-secrets (Development only)  →  environment variables
+```
+
+The app **fails fast at startup** with a message naming the missing key if the connection
+string or the JWT key is absent, rather than dying later with a null reference.
+
+### Local development — `dotnet user-secrets`
+
+Secrets live outside the repository entirely, in your user profile, so they cannot be
+committed by accident.
+
+```bash
+cd Brainova.PL
+dotnet user-secrets set "ConnectionStrings:Default" "Server=...;Database=...;User Id=...;Password=...;Encrypt=True;"
+dotnet user-secrets set "jwtOptions:SecretKey"      "$(openssl rand -base64 32)"
+dotnet user-secrets set "Smtp:User"                 "you@gmail.com"
+dotnet user-secrets set "Smtp:AppPassword"          "<16-char Gmail app password>"
+dotnet user-secrets set "Smtp:From"                 "Brainova <you@gmail.com>"
+
+dotnet user-secrets list   # verify
+```
+
+### Production — environment variables
+
+Nested keys use a double underscore as the separator:
+
+| Setting | Environment variable | Description |
 |---|---|---|
-| `ConnectionStrings:Default` | `DB_CONNECTION_STRING` | SQL Server connection string |
-| `jwtOptions:SecretKey` | — | **Base64-encoded** symmetric signing key |
-| `jwtOptions:Issuer` / `Audience` | — | Token issuer/audience validation |
-| `jwtOptions:DurationInMinutes` | — | Access-token lifetime |
-| `Smtp:*` | — | Host, port, SSL, credentials for identity emails |
+| `ConnectionStrings:Default` | `DB_CONNECTION_STRING` *or* `ConnectionStrings__Default` | SQL Server connection string. **Required** |
+| `jwtOptions:SecretKey` | `jwtOptions__SecretKey` | **Base64-encoded** 32-byte symmetric signing key. **Required** — generate with `openssl rand -base64 32` |
+| `jwtOptions:Issuer` / `Audience` | `jwtOptions__Issuer` / `jwtOptions__Audience` | Token issuer/audience validation. Defaults ship in `appsettings.json` |
+| `jwtOptions:DurationInMinutes` | `jwtOptions__DurationInMinutes` | Access-token lifetime in minutes (default 60) |
+| `Smtp:Host` / `Port` / `EnableSsl` | `Smtp__Host` / `Smtp__Port` / `Smtp__EnableSsl` | Mail transport. Gmail defaults ship in `appsettings.json` |
+| `Smtp:User` / `AppPassword` / `From` | `Smtp__User` / `Smtp__AppPassword` / `Smtp__From` | Credentials and sender for identity emails. **Required** for email confirmation and password reset |
 | *(hosting)* | `PORT` | Listen port for PaaS platforms (defaults to 8080) |
+
+Set these in **Azure App Service → Configuration → Application settings**, or the equivalent
+environment panel on your host.
+
+> A [gitleaks](https://github.com/gitleaks/gitleaks) GitHub Action scans every push and pull
+> request, so a secret committed by mistake fails the build.
 
 
 ---

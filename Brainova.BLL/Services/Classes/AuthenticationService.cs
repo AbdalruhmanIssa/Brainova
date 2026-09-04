@@ -386,7 +386,11 @@ namespace Brainova.BLL.Services.Classes
                 claims.Add(new Claim("Role", role));
 
             var jwtSection = _configuration.GetSection("jwtOptions");
-            var secretBase64 = jwtSection["SecretKey"] ?? throw new Exception("jwtOptions:SecretKey missing");
+            var secretBase64 = jwtSection["SecretKey"];
+            if (string.IsNullOrWhiteSpace(secretBase64))
+                throw new InvalidOperationException(
+                    "No JWT signing key is configured ('jwtOptions:SecretKey'). " +
+                    "See the Configuration section of README.md.");
 
             var keyBytes = Convert.FromBase64String(secretBase64);
             var securityKey = new SymmetricSecurityKey(keyBytes);

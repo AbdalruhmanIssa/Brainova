@@ -95,7 +95,7 @@ builder.Services.AddScoped<IAiTumorService, AiTumorService>();
 
 builder.Services.AddHttpClient("GradCamClient", client =>
 {
-    client.BaseAddress = new Uri("https://brainova-ai-1031567223264.europe-west1.run.app/");
+    client.BaseAddress = new Uri("https://brainova-ai.bravewater-b9761655.westeurope.azurecontainerapps.io/");
     client.Timeout = TimeSpan.FromMinutes(5);
 });
 
@@ -125,7 +125,11 @@ if (string.IsNullOrWhiteSpace(connectionString))
         "See the Configuration section of README.md.");
 
 builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseSqlServer(connectionString));
+    options.UseSqlServer(connectionString, sql =>
+        sql.EnableRetryOnFailure(
+            maxRetryCount: 3,
+            maxRetryDelay: TimeSpan.FromSeconds(5),
+            errorNumbersToAdd: null)));
 
 // ==============================
 // Identity
@@ -296,11 +300,26 @@ if (app.Environment.IsDevelopment())
     app.MapOpenApi();
     app.MapScalarApiReference();
 }
+// Startup seeding must never take the whole API down.
+// If the database is unreachable (network block, bad credentials, host down), log it
+// loudly and keep serving: the process stays up, non-DB endpoints still respond, and
+// the real exception lands in the log instead of a blank HTTP 500.30 with no detail.
 using (var scope = app.Services.CreateScope())
 {
-    var seed = scope.ServiceProvider.GetRequiredService<ISeedData>();
-    await seed.DataSeedingAsync();                // migrate
-    await seed.IdentitySeedingAsync();   // roles + users
+    var startupLogger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+    try
+    {
+        var seed = scope.ServiceProvider.GetRequiredService<ISeedData>();
+        await seed.DataSeedingAsync();                // migrate
+        await seed.IdentitySeedingAsync();   // roles + users
+        startupLogger.LogInformation("Database migration and seeding completed successfully.");
+    }
+    catch (Exception ex)
+    {
+        startupLogger.LogCritical(ex,
+            "Database migration/seeding FAILED at startup. The API is starting anyway, but " +
+            "every database-backed endpoint will fail until this is resolved.");
+    }
 }
 app.UseDefaultFiles();
 app.UseStaticFiles();

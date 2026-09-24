@@ -62,11 +62,11 @@ Brainova is split across four repositories, each owning one piece of the system:
 | Repository | Role | Stack |
 |---|---|---|
 | **[Brainova (this repo)](https://github.com/AbdalruhmanIssa/Brainova)** | 🧩 Core backend API — auth, cases, reports, feedback, notifications, PDF | ASP.NET Core Web API (.NET 10), EF Core, SQL Server |
-| **[Brainova_AI](https://github.com/AbdalruhmanIssa/Brainova_AI)** | 🤖 AI inference microservice — classification + Grad-CAM explainability | FastAPI, TensorFlow/EfficientNet, Google Cloud Run |
+| **[Brainova_AI](https://github.com/AbdalruhmanIssa/Brainova_AI)** | 🤖 AI inference microservice — classification + Grad-CAM explainability | FastAPI, TensorFlow/EfficientNet, Azure Container Apps |
 | **[rahafashqar/Brainova](https://github.com/rahafashqar/Brainova)** · **[shathazyadeh/BrainovaProject](https://github.com/shathazyadeh/BrainovaProject)** | 🎨 Frontend — student, supervisor & admin experience | React 19, Vite, MUI, SignalR client |
 
 ```
-React Frontend  ⇄  ASP.NET Core Backend (this repo)  ⇄  FastAPI AI Service (Cloud Run)
+React Frontend  ⇄  ASP.NET Core Backend (this repo)  ⇄  FastAPI AI Service (Azure Container Apps)
                         │
                         ├── SQL Server (EF Core)
                         ├── SignalR hub (/hubs/notifications)
@@ -97,7 +97,7 @@ sequenceDiagram
     autonumber
     actor S as 🧑‍🎓 Student
     participant API as ASP.NET Backend
-    participant AI as 🤖 AI Service (Cloud Run)
+    participant AI as 🤖 AI Service (Azure)
     actor SV as 🧑‍⚕️ Supervisor
 
     S->>API: Upload brain MRI (JPG/PNG)
@@ -116,6 +116,11 @@ sequenceDiagram
 ```
 
 Every case moves through a strict lifecycle: **`Uploaded → Predicted → ReportSubmitted → Reviewed`** — enforced server-side so students can't skip steps.
+
+<p align="center">
+  <img src="docs/images/postman-mri-upload.png" alt="Uploading a brain MRI case via POST /api/Student/MriCases/upload" width="850">
+  <br><sub><i>Step 1 — a student uploads an MRI; the case is created with status <code>Uploaded</code>.</i></sub>
+</p>
 
 ---
 
@@ -177,7 +182,7 @@ Every service is interface-driven (`IXxxService` → `XxxService`) and registere
 | ML runtime (local inference option) | **Microsoft.ML.OnnxRuntime** (EfficientNet-B1 ONNX model) |
 | API docs | **OpenAPI + Scalar** (dev) |
 | Email | SMTP via `IEmailSender` |
-| AI microservice | FastAPI + TensorFlow on **Google Cloud Run** (see [Brainova_AI](https://github.com/AbdalruhmanIssa/Brainova_AI)) |
+| AI microservice | FastAPI + TensorFlow on **Azure Container Apps** (see [Brainova_AI](https://github.com/AbdalruhmanIssa/Brainova_AI)) |
 | Hosting | **Azure App Service** + MonsterASP mirror |
 
 ---
@@ -234,6 +239,11 @@ Roles and a starter user set are **seeded automatically** on first run.
 ## 📡 API Overview
 
 All endpoints are prefixed with `/api`. Routes are organized by **area** (role).
+
+<p align="center">
+  <img src="docs/images/postman-collections.png" alt="Postman collection organized by feature area" width="260">
+  <br><sub><i>The Postman collection, grouped by area.</i></sub>
+</p>
 
 <details>
 <summary><b>🔑 Identity — <code>/api/Identity/Auths</code></b></summary>
@@ -319,7 +329,7 @@ All endpoints are prefixed with `/api`. Routes are organized by **area** (role).
 |---|---|---|
 | POST | `/gradcam` | Forward an image to the AI service, get prediction + heatmap |
 | GET | `/gradcam-image/{fileName}` | Serve a stored Grad-CAM overlay |
-| GET | `/python-health` | Health check of the Cloud Run AI service |
+| GET | `/python-health` | Health check of the AI service |
 | GET | `/ping` | Backend liveness check |
 
 </details>
@@ -338,6 +348,16 @@ Brainova supports **two auth modes** side by side:
 
 1. **Bearer JWT** — `POST /login` returns a token; clients send `Authorization: Bearer <token>`.
 2. **HttpOnly cookie** — `POST /cookie-login` sets a `Secure`, `HttpOnly` `access_token` cookie. Designed for browser SPAs (immune to XSS token theft) and paired with **antiforgery protection**: the SPA reads the `XSRF-TOKEN` cookie and echoes it back as the `X-XSRF-TOKEN` header.
+
+<p align="center">
+  <img src="docs/images/postman-login.png" alt="POST /api/Identity/Auths/login returning a JWT" width="480">
+  <br><sub><i><code>POST /login</code> returns a JWT (token blurred).</i></sub>
+</p>
+
+<p align="center">
+  <img src="docs/images/postman-bearer-auth.png" alt="Calling a Student endpoint with a Bearer token" width="850">
+  <br><sub><i>Protected endpoints take the token as <code>Authorization: Bearer {{token}}</code>.</i></sub>
+</p>
 
 Additional hardening baked in:
 
@@ -361,12 +381,17 @@ A single SignalR hub at **`/hubs/notifications`** powers instant updates:
 
 ## 🤖 AI Integration
 
-The backend talks to the [Brainova_AI](https://github.com/AbdalruhmanIssa/Brainova_AI) microservice (FastAPI + TensorFlow EfficientNet on Google Cloud Run) through a named `HttpClient` with a 5-minute timeout (cold starts + heavy inference):
+The backend talks to the [Brainova_AI](https://github.com/AbdalruhmanIssa/Brainova_AI) microservice (FastAPI + TensorFlow EfficientNet on Azure Container Apps) through a named `HttpClient` with a 5-minute timeout (cold starts + heavy inference):
 
 1. Student triggers a prediction on an uploaded case.
 2. Backend forwards the MRI to the AI service's `/predict` endpoint.
 3. AI service validates the image *is actually a brain MRI*, classifies it (**glioma / meningioma / pituitary / no tumor**), and generates a **Grad-CAM heatmap** highlighting the decision-driving region.
 4. Backend persists the label, per-class probabilities (JSON), and heatmap image as an `AiResult` bound 1-to-1 with the case.
+
+<p align="center">
+  <img src="docs/images/postman-gradcam.png" alt="Grad-CAM heatmap next to the prediction response" width="900">
+  <br><sub><i>A real prediction: the model classifies the MRI as <b>meningioma</b> and the Grad-CAM heatmap (left) shows the region that drove the decision.</i></sub>
+</p>
 
 An **ONNX runtime path** (EfficientNet-B1 exported to `brainova_effnetb1.onnx`) also ships with the backend as a local-inference option — useful for offline dev without the Python service.
 
@@ -405,7 +430,7 @@ ApplicationUser (Identity) ──< MriCase ──1 AiResult
 
 - [.NET 10 SDK](https://dotnet.microsoft.com/download)
 - SQL Server (LocalDB, Express, or full instance)
-- *(Optional)* Access to the AI service — the public Cloud Run instance is preconfigured
+- *(Optional)* Access to the AI service — the public Azure instance is preconfigured
 
 ### Run locally
 
@@ -504,7 +529,7 @@ The API is deployed on **Azure App Service** (primary) with a **MonsterASP** mir
 ## 📚 Documentation
 
 - 📖 **[REST API Documentation (Postman)](https://documenter.getpostman.com/view/42948249/2sBXcHiyt3)** — every endpoint with example requests, responses, and code snippets, pre-wired to the live Azure API.
-- 🤖 [AI service deep-dive](https://github.com/AbdalruhmanIssa/Brainova_AI) — model training, Grad-CAM implementation, and Cloud Run deployment.
+- 🤖 [AI service deep-dive](https://github.com/AbdalruhmanIssa/Brainova_AI) — model training, Grad-CAM implementation, and deployment.
 
 ---
 

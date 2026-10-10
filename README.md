@@ -84,7 +84,7 @@ The frontend **never** talks to the AI service directly — every prediction flo
 | 🌐 **Frontend (live app)** | <https://brainovaproject.onrender.com/home> |
 | ⚡ **Backend API — Azure App Service** | <https://brainova-backend-grb6egdgg2d8epdw.israelcentral-01.azurewebsites.net> |
 | ⚡ **Backend API — MonsterASP mirror** | <http://brainova.runasp.net/> |
-| 🤖 **AI Service — Azure App Service** | <https://brainova-ai.bravewater-b9761655.westeurope.azurecontainerapps.io/docs> |
+| 🤖 **AI Service — Cloud Run Service** | <https://brainova-ai-1031567223264.europe-west1.run.app/docs> |
 
 > 📚 **[Full REST API documentation (Postman)](https://documenter.getpostman.com/view/42948249/2sBXcHiyt3)** — request/response examples with ready-to-copy snippets in 20+ languages. In local development the API also self-documents via **OpenAPI + Scalar** at `/scalar`.
 

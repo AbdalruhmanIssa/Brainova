@@ -95,7 +95,7 @@ builder.Services.AddScoped<IAiTumorService, AiTumorService>();
 
 builder.Services.AddHttpClient("GradCamClient", client =>
 {
-    client.BaseAddress = new Uri("https://brainova-ai.bravewater-b9761655.westeurope.azurecontainerapps.io/");
+    client.BaseAddress = new Uri("https://brainova-ai-1031567223264.europe-west1.run.app/");
     client.Timeout = TimeSpan.FromMinutes(5);
 });
 

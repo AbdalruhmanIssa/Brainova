@@ -27,9 +27,8 @@ namespace Brainova.BLL.Services.Classes
 
         public async Task<Guid> SubmitAsync(string studentId, SubmitReportRequest req)
         {
-            await using var transaction = await _uow.BeginTransactionAsync();
-
-           
+            var (savedReport, owner) = await _uow.ExecuteInTransactionAsync(async () =>
+            {
                 var caseRepo = _uow.Repo<MriCase>();
                 var reportRepo = _uow.Repo<Report>();
                 var questionRepo = _uow.Repo<ReportQuestion>();
@@ -150,38 +149,40 @@ namespace Brainova.BLL.Services.Classes
                 caseRepo.Update(mriCase);
 
                 await _uow.SaveChangesAsync(); // second save
-                await transaction.CommitAsync();
 
-                // -----------------------------------------------------------
-                // Real-time push (SignalR): notify the supervisor that this
-                // student just submitted a new report for review. Best-effort,
-                // wrapped so SignalR failures never break the API response.
-                // -----------------------------------------------------------
-                try
+                return (report, student);
+            });
+
+            // -----------------------------------------------------------
+            // Real-time push (SignalR): notify the supervisor that this
+            // student just submitted a new report for review. Best-effort,
+            // wrapped so SignalR failures never break the API response.
+            // -----------------------------------------------------------
+            try
+            {
+                var tz = TimeZoneInfo.FindSystemTimeZoneById("Asia/Hebron");
+
+                var payload = new SupervisorNewReportResponse
                 {
-                    var tz = TimeZoneInfo.FindSystemTimeZoneById("Asia/Hebron");
+                    ReportId = savedReport.Id,
+                    ReportCode = savedReport.ReportCode,
+                    CaseId = savedReport.CaseId,
+                    SubmittedAt = TimeZoneInfo.ConvertTimeFromUtc(savedReport.SubmittedAt, tz),
+                    StudentId = studentId,
+                    StudentName = owner.FullName
+                };
 
-                    var payload = new SupervisorNewReportResponse
-                    {
-                        ReportId = report.Id,
-                        ReportCode = report.ReportCode,
-                        CaseId = report.CaseId,
-                        SubmittedAt = TimeZoneInfo.ConvertTimeFromUtc(report.SubmittedAt, tz),
-                        StudentId = studentId,
-                        StudentName = student.FullName
-                    };
-
-                    await _notifications.NotifySupervisorNewReportAsync(
-                        student.SupervisorUserId!,
-                        payload);
-                }
-                catch
-                {
-                    // Notification is best-effort. The report is already saved.
-                }
-
-                return report.Id;
+                await _notifications.NotifySupervisorNewReportAsync(
+                    owner.SupervisorUserId!,
+                    payload);
             }
+            catch
+            {
+                // Notification is best-effort. The report is already saved.
+            }
+
+            return savedReport.Id;
+        }
            
 
         public async Task<List<SupervisorNewReportResponse>> GetNewForSupervisorAsync(string supervisorId)

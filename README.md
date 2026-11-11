@@ -19,6 +19,12 @@
 
 > ⚠️ **Medical disclaimer:** Brainova is an educational and decision-support tool for radiology *training* — it is **not** a diagnostic device and never a substitute for a qualified radiologist.
 
+<p align="center">
+  <img src="docs/images/demo.gif" alt="Brainova demo: a student uploads a brain MRI, answers the case evaluation questions, submits the report and gets the AI prediction with a Grad-CAM heatmap" width="860">
+  <br>
+  <em>The student flow: upload an MRI → answer the case evaluation → submit → AI prediction with Grad-CAM heatmap.</em>
+</p>
+
 ---
 
 ## 📖 Table of Contents

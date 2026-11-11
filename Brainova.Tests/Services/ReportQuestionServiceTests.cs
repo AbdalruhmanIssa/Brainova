@@ -115,6 +115,7 @@ namespace Brainova.Tests.Services
         //           .ReturnsAsync((ApplicationUser?)null);
         // No repo setup needed — it throws before reaching the repo.
         // =====================================================================
+        [Fact]
         public async Task AddAsync_WhenSupervisorDoesNotExist_ThrowsNotFound()
         {
             // Arrange: mock UserManager to return null for the supervisor

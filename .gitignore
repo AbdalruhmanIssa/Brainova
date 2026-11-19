@@ -363,3 +363,7 @@ MigrationBackup/
 FodyWeavers.xsd
 # Personal working notes and roadmap — not part of the repo
 _plan/
+
+# Files uploaded while running the API locally (MRI scans, Grad-CAM heatmaps)
+Brainova.PL/App_Data/mri/
+Brainova.PL/App_Data/gradcam/

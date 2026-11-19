@@ -11,6 +11,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.IdentityModel.Tokens;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
+using System.Security.Cryptography;
 
 namespace Brainova.BLL.Services.Classes
 {
@@ -286,15 +287,33 @@ namespace Brainova.BLL.Services.Classes
             return "Email confirmed successfully";
         }
 
+        // Reset codes are only 4 digits (9,000 possibilities), so guesses are limited per USER,
+        // not per code: otherwise an attacker would just request a fresh code after every few
+        // guesses. MaxResetCodeAttempts wrong codes lock resets for that user for ResetLockDuration.
+        public const int MaxResetCodeAttempts = 5;
+        public static readonly TimeSpan ResetLockDuration = TimeSpan.FromHours(1);
+
         public async Task<bool> ForgotPasswordAsync(ForgetPasswordRequest request)
         {
             var user = await _userManager.FindByEmailAsync(request.Email);
-            if (user is null)
-                throw new NotFoundException("User not found");
 
-            // 4-digit code
-            var random = new Random();
-            var code = random.Next(1000, 9999).ToString();
+            // Same answer whether or not the email has an account, so this endpoint can't be
+            // used to find out who is registered. Only a real account gets an email.
+            if (user is null)
+            {
+                _logger.LogInformation("Password reset requested for an email with no account");
+                return true;
+            }
+
+            if (IsResetLocked(user))
+            {
+                _logger.LogWarning("Password reset code not sent to user {UserId}: resets locked until {LockedUntil}",
+                    user.Id, user.ResetPasswordLockedUntil);
+                return true;
+            }
+
+            // 4-digit code from a cryptographic random generator (System.Random is predictable).
+            var code = RandomNumberGenerator.GetInt32(1000, 10000).ToString();
 
             user.CodeResetPassword = code;
             user.CodeResetPasswordExpire = DateTime.UtcNow.AddMinutes(15);
@@ -312,7 +331,6 @@ namespace Brainova.BLL.Services.Classes
 
             _logger.LogInformation("Password reset code sent to user {UserId}", user.Id);
 
-
             return true;
         }
 
@@ -320,13 +338,22 @@ namespace Brainova.BLL.Services.Classes
         {
             var user = await _userManager.FindByEmailAsync(request.Email);
             if (user is null)
-                throw new NotFoundException("User not found");
-
-            if (user.CodeResetPassword != request.Code)
             {
-                // Warning, not Information: many of these in a row for one user means someone
-                // is guessing the 4-digit code.
-                _logger.LogWarning("Password reset rejected for user {UserId}: wrong code", user.Id);
+                // Same message as a wrong code: don't reveal whether the account exists.
+                _logger.LogInformation("Password reset attempted for an email with no account");
+                throw new BadRequestException("Invalid reset code");
+            }
+
+            if (IsResetLocked(user))
+            {
+                _logger.LogWarning("Password reset rejected for user {UserId}: locked until {LockedUntil}",
+                    user.Id, user.ResetPasswordLockedUntil);
+                throw new BadRequestException(TooManyAttemptsMessage(user));
+            }
+
+            if (user.CodeResetPassword is null)
+            {
+                _logger.LogInformation("Password reset rejected for user {UserId}: no code was requested", user.Id);
                 throw new BadRequestException("Invalid reset code");
             }
 
@@ -334,6 +361,41 @@ namespace Brainova.BLL.Services.Classes
             {
                 _logger.LogInformation("Password reset rejected for user {UserId}: code expired", user.Id);
                 throw new BadRequestException("Reset code expired");
+            }
+
+            // Count the attempt and SAVE it before comparing the code. If an attacker fires many
+            // guesses at once, they all read the same counter; UpdateAsync checks Identity's
+            // ConcurrencyStamp, so only one of them saves and the rest are rejected here without
+            // their code ever being compared.
+            user.ResetPasswordFailedAttempts++;
+            var attemptSaved = await _userManager.UpdateAsync(user);
+            if (!attemptSaved.Succeeded)
+            {
+                _logger.LogWarning("Password reset rejected for user {UserId}: could not record the attempt ({Errors})",
+                    user.Id, string.Join("; ", attemptSaved.Errors.Select(e => e.Code)));
+                throw new BadRequestException("Could not verify the code. Please try again.");
+            }
+
+            // Over the limit means an earlier lock failed to save; lock again without comparing.
+            if (user.ResetPasswordFailedAttempts > MaxResetCodeAttempts)
+            {
+                await LockResetsAsync(user);
+                throw new BadRequestException(TooManyAttemptsMessage(user));
+            }
+
+            if (!string.Equals(user.CodeResetPassword, request.Code, StringComparison.Ordinal))
+            {
+                if (user.ResetPasswordFailedAttempts >= MaxResetCodeAttempts)
+                {
+                    await LockResetsAsync(user);
+                    throw new BadRequestException(TooManyAttemptsMessage(user));
+                }
+
+                // Warning, not Information: several of these in a row for one user means someone
+                // is guessing the code.
+                _logger.LogWarning("Password reset rejected for user {UserId}: wrong code (attempt {Attempt} of {Max})",
+                    user.Id, user.ResetPasswordFailedAttempts, MaxResetCodeAttempts);
+                throw new BadRequestException("Invalid reset code");
             }
 
             // ✅ NEW CHECK HERE
@@ -347,9 +409,11 @@ namespace Brainova.BLL.Services.Classes
             if (!result.Succeeded)
                 throw new BadRequestException(string.Join(",", result.Errors.Select(e => e.Description)));
 
-            // clear code
+            // clear code and the guess counter
             user.CodeResetPassword = null;
             user.CodeResetPasswordExpire = null;
+            user.ResetPasswordFailedAttempts = 0;
+            user.ResetPasswordLockedUntil = null;
 
             var updateResult = await _userManager.UpdateAsync(user);
             if (!updateResult.Succeeded)
@@ -364,6 +428,30 @@ namespace Brainova.BLL.Services.Classes
             _logger.LogInformation("Password reset completed for user {UserId}", user.Id);
 
             return true;
+        }
+
+        private static bool IsResetLocked(ApplicationUser user)
+            => user.ResetPasswordLockedUntil.HasValue && user.ResetPasswordLockedUntil > DateTime.UtcNow;
+
+        private static string TooManyAttemptsMessage(ApplicationUser user)
+        {
+            var remaining = (user.ResetPasswordLockedUntil ?? DateTime.UtcNow.Add(ResetLockDuration)) - DateTime.UtcNow;
+            var minutes = Math.Max(1, (int)Math.Ceiling(remaining.TotalMinutes));
+            return $"Too many wrong codes. Please request a new code in {minutes} minutes.";
+        }
+
+        // Wipes the current code and blocks new ones for ResetLockDuration. If this save fails,
+        // the counter stays above the limit, so the next attempt locks again instead of comparing.
+        private async Task LockResetsAsync(ApplicationUser user)
+        {
+            user.CodeResetPassword = null;
+            user.CodeResetPasswordExpire = null;
+            user.ResetPasswordFailedAttempts = 0;
+            user.ResetPasswordLockedUntil = DateTime.UtcNow.Add(ResetLockDuration);
+            await _userManager.UpdateAsync(user);
+
+            _logger.LogWarning("Password reset locked for user {UserId} until {LockedUntil} after {Max} wrong codes",
+                user.Id, user.ResetPasswordLockedUntil, MaxResetCodeAttempts);
         }
 
         public async Task<string> SetPasswordAsync(SetPasswordRequest request)

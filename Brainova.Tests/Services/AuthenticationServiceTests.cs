@@ -478,11 +478,41 @@ namespace Brainova.Tests.Services
         // =====================================================================
 
         [Fact]
-        public async Task ForgotPasswordAsync_WhenUserDoesNotExist_ThrowsNotFound()
+        public async Task ForgotPasswordAsync_WhenUserDoesNotExist_ReturnsTrue_AndSendsNoEmail()
         {
-            var act = () => _sut.ForgotPasswordAsync(new ForgetPasswordRequest { Email = "ghost@brainova.test" });
+            var ok = await _sut.ForgotPasswordAsync(new ForgetPasswordRequest { Email = "ghost@brainova.test" });
 
-            await act.Should().ThrowAsync<NotFoundException>().WithMessage("User not found");
+            // Same answer as for a real account, so the endpoint can't reveal who is registered.
+            ok.Should().BeTrue();
+            _email.Verify(e => e.SendEmailAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>()),
+                Times.Never);
+        }
+
+        [Fact]
+        public async Task ForgotPasswordAsync_WhileResetsAreLocked_ReturnsTrue_ButIssuesNoCode()
+        {
+            var user = ExistingUser("a@brainova.test");
+            user.ResetPasswordLockedUntil = DateTime.UtcNow.AddMinutes(30);
+
+            var ok = await _sut.ForgotPasswordAsync(new ForgetPasswordRequest { Email = user.Email! });
+
+            ok.Should().BeTrue();
+            user.CodeResetPassword.Should().BeNull();
+            _email.Verify(e => e.SendEmailAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>()),
+                Times.Never);
+        }
+
+        [Fact]
+        public async Task ForgotPasswordAsync_DoesNotResetTheWrongCodeCounter()
+        {
+            var user = ExistingUser("a@brainova.test");
+            user.ResetPasswordFailedAttempts = 3;
+            _userManager.Setup(m => m.UpdateAsync(user)).ReturnsAsync(IdentityResult.Success);
+
+            await _sut.ForgotPasswordAsync(new ForgetPasswordRequest { Email = user.Email! });
+
+            // Otherwise every fresh code would hand out a fresh set of guesses.
+            user.ResetPasswordFailedAttempts.Should().Be(3);
         }
 
         [Fact]
@@ -523,11 +553,65 @@ namespace Brainova.Tests.Services
         // =====================================================================
 
         [Fact]
-        public async Task ResetPasswordAsync_WhenUserDoesNotExist_ThrowsNotFound()
+        public async Task ResetPasswordAsync_WhenUserDoesNotExist_ThrowsTheSameErrorAsAWrongCode()
         {
             var act = () => _sut.ResetPasswordAsync(ResetRequest("ghost@brainova.test", "1234"));
 
-            await act.Should().ThrowAsync<NotFoundException>().WithMessage("User not found");
+            await act.Should().ThrowAsync<BadRequestException>().WithMessage("Invalid reset code");
+        }
+
+        [Fact]
+        public async Task ResetPasswordAsync_WhenCodeIsWrong_SavesTheAttemptBeforeRejecting()
+        {
+            var user = UserWithResetCode("1234", DateTime.UtcNow.AddMinutes(10));
+
+            var act = () => _sut.ResetPasswordAsync(ResetRequest(user.Email!, "9999"));
+
+            await act.Should().ThrowAsync<BadRequestException>().WithMessage("Invalid reset code");
+            user.ResetPasswordFailedAttempts.Should().Be(1);
+            _userManager.Verify(m => m.UpdateAsync(user), Times.Once);
+        }
+
+        [Fact]
+        public async Task ResetPasswordAsync_OnTheLastAllowedWrongCode_WipesTheCodeAndLocksResets()
+        {
+            var user = UserWithResetCode("1234", DateTime.UtcNow.AddMinutes(10));
+            user.ResetPasswordFailedAttempts = AuthenticationService.MaxResetCodeAttempts - 1;
+
+            var act = () => _sut.ResetPasswordAsync(ResetRequest(user.Email!, "9999"));
+
+            await act.Should().ThrowAsync<BadRequestException>().WithMessage("Too many wrong codes*");
+            user.CodeResetPassword.Should().BeNull();
+            user.ResetPasswordFailedAttempts.Should().Be(0);
+            user.ResetPasswordLockedUntil.Should().BeCloseTo(
+                DateTime.UtcNow.Add(AuthenticationService.ResetLockDuration), TimeSpan.FromMinutes(1));
+        }
+
+        [Fact]
+        public async Task ResetPasswordAsync_WhileLocked_RejectsEvenTheCorrectCode()
+        {
+            var user = UserWithResetCode("1234", DateTime.UtcNow.AddMinutes(10));
+            user.ResetPasswordLockedUntil = DateTime.UtcNow.AddMinutes(30);
+
+            var act = () => _sut.ResetPasswordAsync(ResetRequest(user.Email!, "1234"));
+
+            await act.Should().ThrowAsync<BadRequestException>().WithMessage("Too many wrong codes*");
+            VerifyPasswordWasNotChanged();
+        }
+
+        [Fact]
+        public async Task ResetPasswordAsync_WhenTheAttemptCannotBeSaved_RejectsWithoutComparingTheCode()
+        {
+            // Simulates many guesses sent at the same time: Identity's concurrency check lets
+            // only one of them save, and the others must be rejected even with the right code.
+            var user = UserWithResetCode("1234", DateTime.UtcNow.AddMinutes(10));
+            _userManager.Setup(m => m.UpdateAsync(user))
+                        .ReturnsAsync(IdentityResult.Failed(new IdentityError { Code = "ConcurrencyFailure" }));
+
+            var act = () => _sut.ResetPasswordAsync(ResetRequest(user.Email!, "1234"));
+
+            await act.Should().ThrowAsync<BadRequestException>().WithMessage("Could not verify the code*");
+            VerifyPasswordWasNotChanged();
         }
 
         [Fact]
@@ -575,14 +659,18 @@ namespace Brainova.Tests.Services
                         .ReturnsAsync(IdentityResult.Success);
             _userManager.Setup(m => m.UpdateAsync(user)).ReturnsAsync(IdentityResult.Success);
 
+            user.ResetPasswordFailedAttempts = 2;
+
             var ok = await _sut.ResetPasswordAsync(ResetRequest(user.Email!, "1234"));
 
             ok.Should().BeTrue();
             _userManager.Verify(m => m.ResetPasswordAsync(user, "reset-token", Password), Times.Once);
 
-            // The code is single-use: it must be wiped after a successful reset.
+            // The code is single-use: it must be wiped after a successful reset,
+            // and earlier wrong guesses no longer count against the user.
             user.CodeResetPassword.Should().BeNull();
             user.CodeResetPasswordExpire.Should().BeNull();
+            user.ResetPasswordFailedAttempts.Should().Be(0);
 
             _email.Verify(e => e.SendEmailAsync(user.Email!, It.IsAny<string>(), It.IsAny<string>()), Times.Once);
         }
@@ -698,6 +786,8 @@ namespace Brainova.Tests.Services
             var user = ExistingUser("reset@brainova.test");
             user.CodeResetPassword = code;
             user.CodeResetPasswordExpire = expiresUtc;
+            // ResetPasswordAsync saves the attempt counter before checking the code.
+            _userManager.Setup(m => m.UpdateAsync(user)).ReturnsAsync(IdentityResult.Success);
             return user;
         }
 

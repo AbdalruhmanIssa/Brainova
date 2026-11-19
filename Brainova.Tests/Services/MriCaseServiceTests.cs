@@ -157,8 +157,8 @@ namespace Brainova.Tests.Services
             item.FeedbackSubmittedAt.Should().NotBeNull();
 
             item.PredictionResult.Should().Be("glioma");
-            item.ImageUrl.Should().Be("/api/Student/MriCases/image/scan.jpg");
-            item.GradcamUrl.Should().Be("/api/AiTumors/gradcam-image/cam.jpg");
+            item.ImageUrl.Should().Be("/api/CaseImages/mri/scan.jpg");
+            item.GradcamUrl.Should().Be("/api/CaseImages/gradcam/cam.jpg");
         }
 
         [Fact]
@@ -225,6 +225,119 @@ namespace Brainova.Tests.Services
 
             all.Select(c => c.CaseId).Should().Equal(caseB.Id, caseA.Id);   // newest first
             onlyB.Select(c => c.CaseId).Should().Equal(caseB.Id);
+        }
+
+        // ========================== Image access =============================
+        //
+        // CaseImagesController asks these before serving a file. The rule:
+        // only the student who owns the case, or that student's supervisor.
+
+        [Theory]
+        [InlineData("stu-1")]   // the student who uploaded it
+        [InlineData("sup-1")]   // that student's supervisor
+        public async Task CanViewMriImageAsync_AllowsTheOwnerAndTheirSupervisor(string userId)
+        {
+            SetupCaseWithImages();
+
+            var allowed = await _sut.CanViewMriImageAsync(userId, "scan.jpg");
+
+            allowed.Should().BeTrue();
+        }
+
+        [Theory]
+        [InlineData("stu-2")]   // another student
+        [InlineData("sup-2")]   // a supervisor of other students
+        public async Task CanViewMriImageAsync_DeniesEveryoneElse(string userId)
+        {
+            SetupCaseWithImages();
+
+            var allowed = await _sut.CanViewMriImageAsync(userId, "scan.jpg");
+
+            allowed.Should().BeFalse();
+        }
+
+        [Fact]
+        public async Task CanViewMriImageAsync_WhenFileBelongsToNoCase_ReturnsFalse()
+        {
+            SetupCaseWithImages();
+
+            var allowed = await _sut.CanViewMriImageAsync("stu-1", "someone-elses.jpg");
+
+            allowed.Should().BeFalse();
+        }
+
+        [Theory]
+        [InlineData(null)]
+        [InlineData("")]
+        [InlineData("   ")]
+        public async Task CanViewMriImageAsync_WhenUserIdIsBlank_ReturnsFalse(string? userId)
+        {
+            SetupCaseWithImages();
+
+            var allowed = await _sut.CanViewMriImageAsync(userId!, "scan.jpg");
+
+            allowed.Should().BeFalse();
+        }
+
+        [Theory]
+        [InlineData("stu-1", true)]
+        [InlineData("sup-1", true)]
+        [InlineData("stu-2", false)]
+        [InlineData("sup-2", false)]
+        public async Task CanViewGradcamImageAsync_FollowsTheSameRule(string userId, bool expected)
+        {
+            SetupCaseWithImages();
+
+            var allowed = await _sut.CanViewGradcamImageAsync(userId, "cam.jpg");
+
+            allowed.Should().Be(expected);
+        }
+
+        // A case that was never predicted has no heatmap, so no file name can match it.
+        [Fact]
+        public async Task CanViewGradcamImageAsync_WhenCaseHasNoPrediction_ReturnsFalse()
+        {
+            var student = MakeStudent("stu-1", "sup-1", "Student One");
+            _uow.SetupRepo(new List<MriCase>
+            {
+                MakeCase("stu-1", CaseStatus.ReportSubmitted, Jan1, withAi: false, student: student)
+            });
+
+            var allowed = await _sut.CanViewGradcamImageAsync("stu-1", "cam.jpg");
+
+            allowed.Should().BeFalse();
+        }
+
+        // The open demo endpoint (AiTumors/gradcam-image) uses this to refuse
+        // heatmaps that belong to real cases.
+        [Theory]
+        [InlineData("cam.jpg", true)]          // a real case's heatmap
+        [InlineData("demo-upload.jpg", false)] // produced by the demo endpoint
+        [InlineData("", false)]
+        public async Task IsCaseGradcamFileAsync_TellsCaseHeatmapsFromDemoOnes(string fileName, bool expected)
+        {
+            SetupCaseWithImages();
+
+            var isCaseFile = await _sut.IsCaseGradcamFileAsync(fileName);
+
+            isCaseFile.Should().Be(expected);
+        }
+
+        /// <summary>
+        /// One predicted case: student "stu-1", supervised by "sup-1", MRI "scan.jpg",
+        /// heatmap "cam.jpg". Plus a second student of another supervisor, so a
+        /// wrong query that ignores ownership would be caught.
+        /// </summary>
+        private void SetupCaseWithImages()
+        {
+            var owner = MakeStudent("stu-1", "sup-1", "Student One");
+            var other = MakeStudent("stu-2", "sup-2", "Student Two");
+
+            var ownersCase = MakeCase("stu-1", CaseStatus.Predicted, Jan1, withAi: true, student: owner);
+            var othersCase = MakeCase("stu-2", CaseStatus.Predicted, Jan1, withAi: false, student: other);
+            othersCase.StoredFileName = "other-scan.jpg";
+
+            _uow.SetupRepo(new List<MriCase> { ownersCase, othersCase });
         }
 
         // ---------------------------------------------------------------------

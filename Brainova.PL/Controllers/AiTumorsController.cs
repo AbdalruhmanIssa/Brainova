@@ -41,9 +41,25 @@ namespace Brainova.PL.Controllers
 
             return Ok(dto);
         }
+        // Open demo endpoint: serves the heatmaps produced by POST gradcam above,
+        // so anyone can try the model without an account.
+        // Real case heatmaps live in the same App_Data/gradcam folder, so any file
+        // that belongs to a case is refused here; those are served, with access
+        // checks, by CaseImagesController.
         [HttpGet("gradcam-image/{fileName}")]
-        public IActionResult GradcamImage(string fileName, [FromServices] IWebHostEnvironment env)
+        public async Task<IActionResult> GradcamImage(
+            string fileName,
+            [FromServices] IWebHostEnvironment env,
+            [FromServices] IMriCaseService mriCases,
+            CancellationToken ct)
         {
+            // Only a bare file name, never a path ("..\x.jpg", "a/b.jpg").
+            if (string.IsNullOrWhiteSpace(fileName) || Path.GetFileName(fileName) != fileName)
+                return NotFound();
+
+            if (await mriCases.IsCaseGradcamFileAsync(fileName, ct))
+                return NotFound();
+
             var path = Path.Combine(env.ContentRootPath, "App_Data", "gradcam", fileName);
 
             if (!System.IO.File.Exists(path))

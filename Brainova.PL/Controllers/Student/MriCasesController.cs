@@ -29,28 +29,13 @@ namespace Brainova.PL.Controllers.Student
 
             var response = await _service.CreateAsync(studentId, request, ct);
 
-            response.ImageUrl = Url.Action(nameof(GetImage), new { fileName = response.StoredFileName })!;
-            response.ImageUrl = $"{Request.Scheme}://{Request.Host}{response.ImageUrl}";
+            // The image itself is served by CaseImagesController, which checks
+            // that the caller owns the case (or supervises the student who does).
+            response.ImageUrl = $"{Request.Scheme}://{Request.Host}/api/CaseImages/mri/{response.StoredFileName}";
 
             return Ok(response);
         }
 
-        [AllowAnonymous]
-        [HttpGet("image/{fileName}")]
-        public IActionResult GetImage(string fileName)
-        {
-            var path = Path.Combine(
-                Directory.GetCurrentDirectory(),
-                "App_Data",
-                "mri",
-                fileName
-            );
-
-            if (!System.IO.File.Exists(path))
-                return NotFound();
-
-            return PhysicalFile(path, "image/jpeg");
-        }
         [HttpGet("my-cases")]
         public async Task<IActionResult> GetMyCases(CancellationToken ct)
         {

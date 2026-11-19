@@ -132,7 +132,7 @@ namespace Brainova.Tests.Services
             result.CaseId.Should().Be(mriCase.Id);
             result.Prediction.Should().Be("glioma");
             result.Probabilities.Should().Equal(probabilities);
-            result.GradcamUrl.Should().Be("/api/AiTumors/gradcam-image/cam.jpg");
+            result.GradcamUrl.Should().Be("/api/CaseImages/gradcam/cam.jpg");
 
             // Assert — an AiResult row was added for this case
             aiRepo.Verify(r => r.AddAsync(

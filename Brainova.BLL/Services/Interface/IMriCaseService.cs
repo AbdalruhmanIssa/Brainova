@@ -18,6 +18,18 @@ namespace Brainova.BLL.Services.Interface
         string supervisorId,
         string? studentId = null,
         CancellationToken ct = default);
+
+        // ---- Image access (used by CaseImagesController) ----
+
+        // True when userId is the student who owns the case with this MRI file,
+        // or that student's assigned supervisor.
+        Task<bool> CanViewMriImageAsync(string userId, string storedFileName, CancellationToken ct = default);
+
+        // Same rule for the Grad-CAM heatmap produced for a case.
+        Task<bool> CanViewGradcamImageAsync(string userId, string gradcamFileName, CancellationToken ct = default);
+
+        // True when this heatmap belongs to a real case (as opposed to the open demo endpoint).
+        Task<bool> IsCaseGradcamFileAsync(string gradcamFileName, CancellationToken ct = default);
      
 
     }

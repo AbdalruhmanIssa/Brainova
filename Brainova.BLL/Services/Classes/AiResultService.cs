@@ -94,7 +94,7 @@ namespace Brainova.BLL.Services.Classes
                 CaseId = caseId,
                 Prediction = aiResult.PredictionResult,
                 Probabilities = ai.Probabilities,
-                GradcamUrl = $"/api/AiTumors/gradcam-image/{aiResult.GradcamFileName}",
+                GradcamUrl = $"/api/CaseImages/gradcam/{aiResult.GradcamFileName}",
                 CreatedAt = TimeZoneInfo.ConvertTimeFromUtc(
                     aiResult.CreatedAt,
                     TimeZoneInfo.FindSystemTimeZoneById("Asia/Hebron"))

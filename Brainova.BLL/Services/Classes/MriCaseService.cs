@@ -128,10 +128,10 @@ namespace Brainova.BLL.Services.Classes
                     TimeZoneInfo.FindSystemTimeZoneById("Asia/Hebron")
                 ),
 
-                ImageUrl = $"/api/Student/MriCases/image/{x.Case.StoredFileName}",
+                ImageUrl = $"/api/CaseImages/mri/{x.Case.StoredFileName}",
 
                 GradcamUrl = x.Case.AiResult != null
-                    ? $"/api/AiTumors/gradcam-image/{x.Case.AiResult.GradcamFileName}"
+                    ? $"/api/CaseImages/gradcam/{x.Case.AiResult.GradcamFileName}"
                     : null
             }).ToList();
         }
@@ -219,13 +219,54 @@ namespace Brainova.BLL.Services.Classes
                     TimeZoneInfo.FindSystemTimeZoneById("Asia/Hebron")
                 ),
 
-                ImageUrl = $"/api/Student/MriCases/image/{x.Case.StoredFileName}",
+                ImageUrl = $"/api/CaseImages/mri/{x.Case.StoredFileName}",
                 GradcamUrl = x.Case.AiResult != null
-                    ? $"/api/AiTumors/gradcam-image/{x.Case.AiResult.GradcamFileName}"
+                    ? $"/api/CaseImages/gradcam/{x.Case.AiResult.GradcamFileName}"
                     : null
             }).ToList();
         }
-     
 
+        // =====================================================================
+        // Image access
+        //
+        // A case's images may be seen by exactly two people: the student who
+        // uploaded it, and that student's assigned supervisor. The query runs
+        // in SQL (AnyAsync), so nothing is loaded into memory.
+        // =====================================================================
+
+        public Task<bool> CanViewMriImageAsync(string userId, string storedFileName, CancellationToken ct = default)
+        {
+            if (string.IsNullOrWhiteSpace(userId) || string.IsNullOrWhiteSpace(storedFileName))
+                return Task.FromResult(false);
+
+            return _uow.Repo<MriCase>()
+                .Query()
+                .AnyAsync(c =>
+                    c.StoredFileName == storedFileName &&
+                    (c.StudentId == userId || c.Student.SupervisorUserId == userId), ct);
+        }
+
+        public Task<bool> CanViewGradcamImageAsync(string userId, string gradcamFileName, CancellationToken ct = default)
+        {
+            if (string.IsNullOrWhiteSpace(userId) || string.IsNullOrWhiteSpace(gradcamFileName))
+                return Task.FromResult(false);
+
+            return _uow.Repo<MriCase>()
+                .Query()
+                .AnyAsync(c =>
+                    c.AiResult != null &&
+                    c.AiResult.GradcamFileName == gradcamFileName &&
+                    (c.StudentId == userId || c.Student.SupervisorUserId == userId), ct);
+        }
+
+        public Task<bool> IsCaseGradcamFileAsync(string gradcamFileName, CancellationToken ct = default)
+        {
+            if (string.IsNullOrWhiteSpace(gradcamFileName))
+                return Task.FromResult(false);
+
+            return _uow.Repo<MriCase>()
+                .Query()
+                .AnyAsync(c => c.AiResult != null && c.AiResult.GradcamFileName == gradcamFileName, ct);
+        }
     }
 }

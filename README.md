@@ -296,7 +296,6 @@ All endpoints are prefixed with `/api`. Routes are organized by **area** (role).
 |---|---|---|
 | POST | `/MriCases/upload` | Upload a brain MRI image |
 | GET | `/MriCases/my-cases` | List own cases with status |
-| GET | `/MriCases/image/{fileName}` | Fetch stored MRI image |
 | POST | `/AIResults/{caseId}/predict` | Run AI prediction on a case |
 | GET | `/Reports/questions` | Get supervisor's questionnaire |
 | POST | `/Reports/submit` | Submit diagnostic report answers |
@@ -329,12 +328,26 @@ All endpoints are prefixed with `/api`. Routes are organized by **area** (role).
 </details>
 
 <details>
+<summary><b>🖼️ Case Images — <code>/api/CaseImages</code></b></summary>
+
+Student or Supervisor. Only the student who owns the case and that student's supervisor can open its images; anyone else gets 404.
+
+| Method | Endpoint | Description |
+|---|---|---|
+| GET | `/mri/{fileName}` | A case's uploaded MRI scan |
+| GET | `/gradcam/{fileName}` | A case's Grad-CAM heatmap |
+
+</details>
+
+<details>
 <summary><b>🤖 AI Bridge — <code>/api/AiTumors</code></b></summary>
+
+Open on purpose, so the model can be tried without an account. Not connected to cases.
 
 | Method | Endpoint | Description |
 |---|---|---|
 | POST | `/gradcam` | Forward an image to the AI service, get prediction + heatmap |
-| GET | `/gradcam-image/{fileName}` | Serve a stored Grad-CAM overlay |
+| GET | `/gradcam-image/{fileName}` | Serve a heatmap produced by `/gradcam` (case heatmaps are refused) |
 | GET | `/python-health` | Health check of the AI service |
 | GET | `/ping` | Backend liveness check |
 

@@ -22,6 +22,8 @@ using Mapster;
 
 using Brainova.BLL.Mapping;
 using Serilog;
+using Serilog.Events;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 
 // ==============================
 // Serilog — two-stage initialization.
@@ -159,6 +161,15 @@ builder.Services.AddDbContext<AppDbContext>(options =>
             maxRetryCount: 3,
             maxRetryDelay: TimeSpan.FromSeconds(5),
             errorNumbersToAdd: null)));
+
+// ==============================
+// Health checks (mapped at the bottom of this file)
+//   /health/live  — no checks: answers 200 as long as the process is running.
+//   /health/ready — also opens a connection to SQL Server; 503 if the database is unreachable.
+// The "ready" tag decides which checks run on which URL.
+// ==============================
+builder.Services.AddHealthChecks()
+    .AddDbContextCheck<AppDbContext>(name: "database", tags: new[] { "ready" });
 
 // ==============================
 // Identity
@@ -334,6 +345,14 @@ app.UseSerilogRequestLogging(options =>
         if (userId is not null)
             diagnosticContext.Set("UserId", userId);
     };
+
+    // Azure and the deploy pipeline poll /health every minute or so. Log those requests only
+    // when they fail, so they don't drown out real traffic. Everything else keeps the
+    // defaults: Error for 5xx or an exception, Information otherwise.
+    options.GetLevel = (httpContext, _, exception) =>
+        exception is not null || httpContext.Response.StatusCode >= 500 ? LogEventLevel.Error
+        : httpContext.Request.Path.StartsWithSegments("/health") ? LogEventLevel.Verbose
+        : LogEventLevel.Information;
 });
 
 app.UseCors("AllowFrontend");
@@ -429,5 +448,10 @@ app.UseAuthorization();
 
 app.MapControllers();
 app.MapHub<NotificationHub>("/hubs/notifications");
+
+// Anonymous on purpose: Azure and the deploy pipeline call these without a token.
+// The response body is just "Healthy" / "Unhealthy" — no exception details, no connection info.
+app.MapHealthChecks("/health/live", new HealthCheckOptions { Predicate = _ => false });
+app.MapHealthChecks("/health/ready", new HealthCheckOptions { Predicate = check => check.Tags.Contains("ready") });
 
 app.Run();

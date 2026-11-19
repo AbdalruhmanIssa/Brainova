@@ -555,6 +555,14 @@ The API is deployed on **Azure App Service** (primary) with a **MonsterASP** mir
 - **No in-app HTTPS redirection** — TLS is terminated at the platform proxy; redirecting inside the app breaks `SameSite=None` cookies on iOS Safari.
 - **Dynamic port binding** — respects the `PORT` env var (Render/Azure/Docker convention) outside development.
 - **CORS with credentials** — configured to allow the SPA origin while permitting cookies and SignalR WebSockets (`AllowCredentials` + origin callback).
+- **Health checks** — two anonymous endpoints that return `Healthy` (200) or `Unhealthy` (503) and nothing else:
+
+  | Endpoint | Checks | Use it for |
+  |---|---|---|
+  | `GET /health/live` | nothing — the process is up | Azure App Service → **Health check** path |
+  | `GET /health/ready` | also connects to SQL Server | post-deploy smoke test; "is the whole API usable?" |
+
+  Successful health probes are not written to the request log, so a probe every minute doesn't bury real traffic.
 
 ---
 

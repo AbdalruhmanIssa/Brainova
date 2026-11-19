@@ -22,9 +22,39 @@ using Mapster;
 using Brainova.PL.Middlewares;
 
 using Brainova.BLL.Mapping;
+using Serilog;
+
+// ==============================
+// Serilog — two-stage initialization.
+// 1) A bootstrap logger exists from the very first line, so anything that fails while
+//    the host is being built (missing connection string, bad config) is still logged.
+// 2) AddSerilog below replaces it with the full logger, configured from the "Serilog"
+//    section of appsettings.json / appsettings.{Environment}.json.
+// ==============================
+Log.Logger = new LoggerConfiguration()
+    .WriteTo.Console()
+    .CreateBootstrapLogger();
+
+// Top-level statements can't be wrapped in try/catch without re-indenting this whole
+// file, so a crash that escapes Program.cs is logged from this handler instead.
+AppDomain.CurrentDomain.UnhandledException += (_, e) =>
+{
+    // `dotnet ef` stops the host on purpose with this exception — not a crash.
+    if (e.ExceptionObject is HostAbortedException) return;
+
+    Log.Fatal(e.ExceptionObject as Exception, "Brainova API terminated unexpectedly.");
+    Log.CloseAndFlush();
+};
 
 var builder = WebApplication.CreateBuilder(args);
 TypeAdapterConfig.GlobalSettings.Scan(typeof(MapsterConfig).Assembly);
+
+// Serilog becomes the only logging provider: every ILogger<T> injected anywhere in
+// PL/BLL/DAL writes through it. Levels and sinks live in config, not in code.
+builder.Services.AddSerilog((services, loggerConfiguration) => loggerConfiguration
+    .ReadFrom.Configuration(builder.Configuration)
+    .ReadFrom.Services(services)
+    .Enrich.FromLogContext());
 
 // Configure for cloud deployment (OnRender, Azure App Service, Docker, etc.)
 // Only apply this in non-Development so launchSettings.json (and Scalar) work locally.
@@ -289,6 +319,23 @@ var app = builder.Build();
 // MUST be the first middleware so all subsequent middleware sees the correct
 // scheme/host/IP forwarded by the upstream proxy (HTTPS, real client IP, etc.).
 app.UseForwardedHeaders();
+
+// One structured line per request — method, path, status code, elapsed ms — instead of
+// ASP.NET's several lines. Placed after forwarded headers so it sees the real client IP,
+// and before ApiExceptionMiddleware so it records the status code that middleware returns.
+// RequestPath excludes the query string, so SignalR's ?access_token=... is never logged.
+app.UseSerilogRequestLogging(options =>
+{
+    options.EnrichDiagnosticContext = (diagnosticContext, httpContext) =>
+    {
+        diagnosticContext.Set("ClientIp", httpContext.Connection.RemoteIpAddress?.ToString());
+
+        // Runs after the request completes, so authentication has already populated User.
+        var userId = httpContext.User.FindFirst("Id")?.Value;
+        if (userId is not null)
+            diagnosticContext.Set("UserId", userId);
+    };
+});
 
 app.UseCors("AllowFrontend");
 

@@ -187,6 +187,7 @@ Every service is interface-driven (`IXxxService` → `XxxService`) and registere
 | Image processing | **SixLabors.ImageSharp** |
 | ML runtime (local inference option) | **Microsoft.ML.OnnxRuntime** (EfficientNet-B1 ONNX model) |
 | API docs | **OpenAPI + Scalar** (dev) |
+| Logging | **Serilog** — structured logs, one line per request, console everywhere + rolling file in dev |
 | Email | SMTP via `IEmailSender` |
 | AI microservice | FastAPI + TensorFlow on **Azure Container Apps** (see [Brainova_AI](https://github.com/AbdalruhmanIssa/Brainova_AI)) |
 | Hosting | **Azure App Service** + MonsterASP mirror |
@@ -530,6 +531,18 @@ environment panel on your host.
 
 > A [gitleaks](https://github.com/gitleaks/gitleaks) GitHub Action scans every push and pull
 > request, so a secret committed by mistake fails the build.
+
+### Logging
+
+Logging goes through **Serilog**, configured by the `Serilog` section of `appsettings.json`:
+
+- **Console** in every environment — on Azure App Service this is what **Log stream** shows.
+- **Rolling file** in Development only: `Brainova.PL/logs/brainova-YYYYMMDD.log`, last 7 days kept.
+- **One line per HTTP request** with method, path, status code, duration, client IP and user id.
+- Framework noise (`Microsoft.AspNetCore`, EF Core) is held at `Warning`; Development shows SQL.
+
+Raise or lower any level without a redeploy by adding an app setting, e.g.
+`Serilog__MinimumLevel__Default=Debug` or `Serilog__MinimumLevel__Override__Microsoft.EntityFrameworkCore=Information`.
 
 
 ---

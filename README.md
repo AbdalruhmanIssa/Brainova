@@ -536,7 +536,10 @@ environment panel on your host.
 
 Logging goes through **Serilog**, configured by the `Serilog` section of `appsettings.json`:
 
-- **Console** in every environment — on Azure App Service this is what **Log stream** shows.
+- **Console** in every environment.
+- **Azure (Production)**: a daily file in `D:\home\LogFiles\Application\` (`appsettings.Production.json`),
+  because Windows App Service does not capture console output. Turn on **App Service logs → Application
+  logging (Filesystem)** to see it in **Log stream**; the files are also downloadable from Kudu.
 - **Rolling file** in Development only: `Brainova.PL/logs/brainova-YYYYMMDD.log`, last 7 days kept.
 - **One line per HTTP request** with method, path, status code, duration, client IP and user id.
 - Framework noise (`Microsoft.AspNetCore`, EF Core) is held at `Warning`; Development shows SQL.

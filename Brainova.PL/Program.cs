@@ -19,7 +19,6 @@ using Microsoft.IdentityModel.Tokens;
 using Microsoft.ML.OnnxRuntime;
 using Scalar.AspNetCore;
 using Mapster;
-using Brainova.PL.Middlewares;
 
 using Brainova.BLL.Mapping;
 using Serilog;

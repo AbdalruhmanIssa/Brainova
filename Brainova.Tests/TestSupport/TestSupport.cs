@@ -3,6 +3,7 @@ using Brainova.DAL.Repositories.Interface;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.Extensions.Logging;
 using MockQueryable;
 using Moq;
 
@@ -116,4 +117,24 @@ namespace Brainova.Tests.TestSupport
             }
         }
     }
+
+    /// <summary>
+    /// An ILogger that remembers everything logged through it, so a test can assert on
+    /// the level, the rendered message and the exception. Use NullLogger&lt;T&gt;.Instance
+    /// instead when the test does not care about logging.
+    /// </summary>
+    public sealed class CapturingLogger<T> : ILogger<T>
+    {
+        public List<LogEntry> Entries { get; } = new();
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state,
+            Exception? exception, Func<TState, Exception?, string> formatter)
+            => Entries.Add(new LogEntry(logLevel, formatter(state, exception), exception));
+    }
+
+    public sealed record LogEntry(LogLevel Level, string Message, Exception? Exception);
 }

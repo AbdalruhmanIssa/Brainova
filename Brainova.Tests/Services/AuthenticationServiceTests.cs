@@ -11,6 +11,7 @@ using FluentAssertions;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.UI.Services;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 using Moq;
 using Xunit;
 using IdentitySignInResult = Microsoft.AspNetCore.Identity.SignInResult;
@@ -35,6 +36,7 @@ namespace Brainova.Tests.Services
         private readonly Mock<SignInManager<ApplicationUser>> _signInManager;
         private readonly Mock<IEmailSender> _email = new();
         private readonly Mock<INotificationService> _notifications = new();
+        private readonly CapturingLogger<AuthenticationService> _logger = new();
         private readonly AuthenticationService _sut;
 
         public AuthenticationServiceTests()
@@ -82,6 +84,32 @@ namespace Brainova.Tests.Services
 
             await act.Should().ThrowAsync<BadRequestException>()
                      .WithMessage("Invalid email/username or password");
+        }
+
+        [Fact]
+        public async Task LoginAsync_WhenPasswordIsWrong_LogsAWarningWithTheUserId_ButNeverThePassword()
+        {
+            var user = ExistingUser("a@brainova.test");
+            PasswordCheckReturns(user, IdentitySignInResult.Failed);
+
+            var act = () => _sut.LoginAsync(Login(user.Email!));
+            await act.Should().ThrowAsync<BadRequestException>();
+
+            _logger.Entries.Should().ContainSingle(e => e.Level == LogLevel.Warning)
+                   .Which.Message.Should().Contain(user.Id);
+            _logger.Entries.Should().NotContain(e => e.Message.Contains(Password));
+        }
+
+        [Fact]
+        public async Task LoginAsync_WhenUserDoesNotExist_DoesNotLogWhatWasTyped()
+        {
+            var act = () => _sut.LoginAsync(Login("ghost@brainova.test"));
+            await act.Should().ThrowAsync<BadRequestException>();
+
+            // Users sometimes type their password into the username box, so the attempted
+            // value must not end up in the logs.
+            _logger.Entries.Should().ContainSingle(e => e.Level == LogLevel.Warning);
+            _logger.Entries.Should().NotContain(e => e.Message.Contains("ghost"));
         }
 
         [Fact]
@@ -393,6 +421,11 @@ namespace Brainova.Tests.Services
             var message = await _sut.RegisterStudentAsync(request, null!);
 
             message.Should().StartWith("Registration successful");
+
+            // The failure is swallowed so registration succeeds, but it must not vanish:
+            // it is logged as a Warning carrying the original exception.
+            _logger.Entries.Should().ContainSingle(e => e.Level == LogLevel.Warning)
+                   .Which.Exception!.Message.Should().Be("SignalR is down");
         }
 
         // =====================================================================
@@ -632,7 +665,8 @@ namespace Brainova.Tests.Services
                 configuration,
                 _email.Object,
                 _signInManager.Object,
-                _notifications.Object);
+                _notifications.Object,
+                _logger);
         }
 
         /// <summary>A throw-away signing key (64 bytes; HMAC-SHA256 needs at least 32).</summary>

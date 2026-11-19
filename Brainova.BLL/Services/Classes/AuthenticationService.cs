@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.UI.Services;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 using Microsoft.IdentityModel.Tokens;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
@@ -20,19 +21,22 @@ namespace Brainova.BLL.Services.Classes
         private readonly IEmailSender _emailSender;
         private readonly SignInManager<ApplicationUser> _signInManager;
         private readonly INotificationService _notifications;
+        private readonly ILogger<AuthenticationService> _logger;
 
         public AuthenticationService(
             UserManager<ApplicationUser> userManager,
             IConfiguration configuration,
             IEmailSender emailSender,
             SignInManager<ApplicationUser> signInManager,
-            INotificationService notifications)
+            INotificationService notifications,
+            ILogger<AuthenticationService> logger)
         {
             _userManager = userManager;
             _configuration = configuration;
             _emailSender = emailSender;
             _signInManager = signInManager;
             _notifications = notifications;
+            _logger = logger;
         }
 
         public async Task<UserResponse> LoginAsync(LoginRequest request)
@@ -108,22 +112,40 @@ namespace Brainova.BLL.Services.Classes
 
             // ✅ Security: لا تكشف إذا المستخدم موجود أو لا
             if (user is null)
+            {
+                // The attempted email/username is deliberately not logged: people sometimes
+                // type their password into that box by mistake.
+                _logger.LogWarning("Login failed: no account matches the given email/username");
                 throw new BadRequestException("Invalid email/username or password");
+            }
 
             if (user.IsBlocked)
+            {
+                _logger.LogWarning("Login refused for user {UserId}: account is blocked", user.Id);
                 throw new ForbiddenException("Your account is blocked");
+            }
 
             var result = await _signInManager.CheckPasswordSignInAsync(user, request.Password, true);
 
             if (result.Succeeded)
+            {
+                _logger.LogInformation("User {UserId} logged in", user.Id);
                 return (user, result);
+            }
 
             if (result.IsLockedOut)
+            {
+                _logger.LogWarning("Login refused for user {UserId}: locked out after too many failed attempts", user.Id);
                 throw new ForbiddenException("Your account is locked");
+            }
 
             if (result.IsNotAllowed)
+            {
+                _logger.LogInformation("Login refused for user {UserId}: email not confirmed", user.Id);
                 throw new BadRequestException("Please confirm your email");
+            }
 
+            _logger.LogWarning("Login failed for user {UserId}: wrong password", user.Id);
             throw new BadRequestException("Invalid email/username or password");
         }
 
@@ -165,6 +187,8 @@ namespace Brainova.BLL.Services.Classes
             if (!roleResult.Succeeded)
                 throw new BadRequestException(string.Join(";", roleResult.Errors.Select(e => e.Description)));
 
+            _logger.LogInformation("Student {UserId} registered under supervisor {SupervisorId}",
+                user.Id, request.SupervisorUserId);
 
             // 4) Email confirmation
             var token = await _userManager.GenerateEmailConfirmationTokenAsync(user);
@@ -207,9 +231,10 @@ namespace Brainova.BLL.Services.Classes
                         user.SupervisorUserId);
                 }
             }
-            catch
+            catch (Exception ex)
             {
-                // Best-effort.
+                // Best-effort: the registration itself has already succeeded.
+                _logger.LogWarning(ex, "Real-time notification failed after registering student {UserId}", user.Id);
             }
 
             return "Registration successful. Please check your email to confirm your account.";
@@ -225,7 +250,13 @@ namespace Brainova.BLL.Services.Classes
             var result = await _userManager.ConfirmEmailAsync(user, decodedToken);
 
             if (!result.Succeeded)
+            {
+                _logger.LogWarning("Email confirmation failed for user {UserId}: {Errors}",
+                    user.Id, string.Join("; ", result.Errors.Select(e => e.Code)));
                 throw new BadRequestException("Email confirmation failed");
+            }
+
+            _logger.LogInformation("User {UserId} confirmed their email", user.Id);
 
             // -----------------------------------------------------------
             // Real-time push: admins + super-admins see the EmailConfirmed
@@ -246,9 +277,10 @@ namespace Brainova.BLL.Services.Classes
                     ByUserId = null  // self-action via email link, no admin involved
                 });
             }
-            catch
+            catch (Exception ex)
             {
-                // Best-effort.
+                // Best-effort: the confirmation is already saved.
+                _logger.LogWarning(ex, "Real-time notification failed after user {UserId} confirmed their email", user.Id);
             }
 
             return "Email confirmed successfully";
@@ -278,6 +310,8 @@ namespace Brainova.BLL.Services.Classes
                 "<p>This code expires in 15 minutes.</p>"
             );
 
+            _logger.LogInformation("Password reset code sent to user {UserId}", user.Id);
+
 
             return true;
         }
@@ -289,10 +323,18 @@ namespace Brainova.BLL.Services.Classes
                 throw new NotFoundException("User not found");
 
             if (user.CodeResetPassword != request.Code)
+            {
+                // Warning, not Information: many of these in a row for one user means someone
+                // is guessing the 4-digit code.
+                _logger.LogWarning("Password reset rejected for user {UserId}: wrong code", user.Id);
                 throw new BadRequestException("Invalid reset code");
+            }
 
             if (!user.CodeResetPasswordExpire.HasValue || user.CodeResetPasswordExpire < DateTime.UtcNow)
+            {
+                _logger.LogInformation("Password reset rejected for user {UserId}: code expired", user.Id);
                 throw new BadRequestException("Reset code expired");
+            }
 
             // ✅ NEW CHECK HERE
             var isSamePassword = await _userManager.CheckPasswordAsync(user, request.NewPassword);
@@ -318,6 +360,8 @@ namespace Brainova.BLL.Services.Classes
                 "Brainova - Password changed",
                 "<h3>Your password has been changed successfully.</h3>"
             );
+
+            _logger.LogInformation("Password reset completed for user {UserId}", user.Id);
 
             return true;
         }
@@ -362,11 +406,13 @@ namespace Brainova.BLL.Services.Classes
                     ByUserId = null  // self-action via email link, no admin involved
                 });
             }
-            catch
+            catch (Exception ex)
             {
-                // Best-effort.
+                // Best-effort: the password is already set.
+                _logger.LogWarning(ex, "Real-time notification failed after user {UserId} set their password", user.Id);
             }
 
+            _logger.LogInformation("User {UserId} set their password and confirmed their email", user.Id);
             return "Password set successfully.";
         }
 

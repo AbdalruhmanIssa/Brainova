@@ -1,7 +1,10 @@
 using System.Text.Json;
 using Brainova.BLL.Exceptions;
+using Brainova.Tests.TestSupport;
 using FluentAssertions;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
 namespace Brainova.Tests.Middleware
@@ -51,10 +54,65 @@ namespace Brainova.Tests.Middleware
         }
 
         [Fact]
+        public async Task Invoke_WhenAnUnexpectedExceptionIsThrown_NeverSendsExceptionDetailsToTheClient()
+        {
+            var (_, body, json) = await RunWithJsonAsync(
+                _ => throw new InvalidOperationException("Login failed for user 'sa' on db-prod-01"));
+
+            // The old debug fields are gone, and the exception text appears nowhere in the body.
+            body.TryGetProperty("error", out _).Should().BeFalse();
+            body.TryGetProperty("exceptionType", out _).Should().BeFalse();
+            body.TryGetProperty("stack", out _).Should().BeFalse();
+            json.Should().NotContain("db-prod-01");
+            json.Should().NotContain("InvalidOperationException");
+        }
+
+        [Fact]
+        public async Task Invoke_WhenAnUnexpectedExceptionIsThrown_ReturnsATraceIdThatIsAlsoInTheLog()
+        {
+            var logger = new CapturingLogger<ApiExceptionMiddleware>();
+
+            var (_, body, _) = await RunWithJsonAsync(_ => throw new InvalidOperationException("boom"), logger);
+
+            var traceId = body.GetProperty("traceId").GetString();
+            traceId.Should().NotBeNullOrEmpty();
+            logger.Entries.Should().ContainSingle(e => e.Level == LogLevel.Error)
+                  .Which.Message.Should().Contain(traceId);
+        }
+
+        [Fact]
+        public async Task Invoke_WhenAnUnexpectedExceptionIsThrown_LogsTheFullExceptionAsError()
+        {
+            var logger = new CapturingLogger<ApiExceptionMiddleware>();
+            var thrown = new InvalidOperationException("db exploded");
+
+            await RunWithJsonAsync(_ => throw thrown, logger);
+
+            // The details the client no longer sees must land in the server log instead.
+            logger.Entries.Should().ContainSingle(e => e.Level == LogLevel.Error)
+                  .Which.Exception.Should().BeSameAs(thrown);
+        }
+
+        [Fact]
+        public async Task Invoke_WhenAnApiExceptionIsThrown_LogsInformation_NotError()
+        {
+            var logger = new CapturingLogger<ApiExceptionMiddleware>();
+
+            await RunWithJsonAsync(_ => throw new NotFoundException("no such case"), logger);
+
+            // A 404 is the client's mistake, not a bug: no Error, and no stack trace.
+            logger.Entries.Should().ContainSingle();
+            logger.Entries[0].Level.Should().Be(LogLevel.Information);
+            logger.Entries[0].Exception.Should().BeNull();
+            logger.Entries[0].Message.Should().Contain("404").And.Contain("no such case");
+        }
+
+        [Fact]
         public async Task Invoke_WritesJsonContentType()
         {
             var context = NewContext();
-            var sut = new ApiExceptionMiddleware(_ => throw new NotFoundException("x"));
+            var sut = new ApiExceptionMiddleware(_ => throw new NotFoundException("x"),
+                NullLogger<ApiExceptionMiddleware>.Instance);
 
             await sut.Invoke(context);
 
@@ -71,7 +129,7 @@ namespace Brainova.Tests.Middleware
                 nextWasCalled = true;
                 ctx.Response.StatusCode = 204;
                 return Task.CompletedTask;
-            });
+            }, NullLogger<ApiExceptionMiddleware>.Instance);
 
             await sut.Invoke(context);
 
@@ -95,8 +153,16 @@ namespace Brainova.Tests.Middleware
 
         private static async Task<(int Status, JsonElement Body)> RunAsync(RequestDelegate next)
         {
+            var (status, body, _) = await RunWithJsonAsync(next);
+            return (status, body);
+        }
+
+        /// <summary>Runs the middleware and also returns the raw JSON text it wrote.</summary>
+        private static async Task<(int Status, JsonElement Body, string Json)> RunWithJsonAsync(
+            RequestDelegate next, ILogger<ApiExceptionMiddleware>? logger = null)
+        {
             var context = NewContext();
-            var sut = new ApiExceptionMiddleware(next);
+            var sut = new ApiExceptionMiddleware(next, logger ?? NullLogger<ApiExceptionMiddleware>.Instance);
 
             await sut.Invoke(context);
 
@@ -106,7 +172,7 @@ namespace Brainova.Tests.Middleware
             using var doc = JsonDocument.Parse(json);
 
             // Clone() so the element stays usable after the document is disposed.
-            return (context.Response.StatusCode, doc.RootElement.Clone());
+            return (context.Response.StatusCode, doc.RootElement.Clone(), json);
         }
     }
 }

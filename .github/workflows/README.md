@@ -6,8 +6,9 @@ This folder holds the automation that GitHub runs for Brainova. Each `.yml` file
 |---|---|---|
 | [`ci.yml`](ci.yml) | Restores, builds and tests the whole solution | push to `develop` / `main`, every pull request, manual button |
 | [`secret-scan.yml`](secret-scan.yml) | Scans the git history for committed passwords and keys (gitleaks) | every push and pull request |
+| [`cd.yml`](cd.yml) | Builds, tests and deploys `main` to Azure App Service, then checks `/health/ready` | manual button only |
 
-The rest of this document explains `ci.yml`.
+Most of this document explains `ci.yml`; `cd.yml` has its own section at the end.
 
 ---
 
@@ -201,3 +202,35 @@ Stop the running API first. Otherwise the build reports `MSB3021` / `MSB3027` "f
 | Collect code coverage | Add `--collect "XPlat Code Coverage"` to the *Test* step (`coverlet.collector` is already referenced) |
 | Block merging while CI is red | GitHub: *Settings → Branches → Add rule →* require the `build and test` status check |
 | Show a status badge in the main README | `![ci](https://github.com/AbdalruhmanIssa/Brainova/actions/workflows/ci.yml/badge.svg?branch=develop)` |
+
+## `cd.yml` — deploy to Azure (manual)
+
+`cd.yml` deploys `main` to the `brainova-backend` App Service. It only runs when
+you press **Actions → deploy → Run workflow** (pick `main`); any other branch is
+skipped. Publishing from Visual Studio keeps working alongside it.
+
+What one run does: build → test → `dotnet publish Brainova.PL` → drop `App_Data`
+from the package → upload with `azure/webapps-deploy` (`clean: false`, so files
+already on the server, such as uploaded MRI and Grad-CAM images, are left alone)
+→ retry `GET /health/ready` for about three minutes.
+
+### One-time setup
+
+1. Azure portal → `brainova-backend` → **Configuration → General settings** →
+   **SCM Basic Auth Publishing Credentials: On** → Save.
+2. **Overview → Download publish profile.**
+3. GitHub → **Settings → Secrets and variables → Actions → New repository
+   secret**: name `AZURE_WEBAPP_PUBLISH_PROFILE`, value = the whole file.
+   Never commit the file. **Reset publish profile** in the portal changes the
+   password, so the secret must be updated afterwards.
+
+### Secrets on the server
+
+The deploy uploads code only. The connection string, JWT key and SMTP password
+stay in the App Service's **Environment variables**, exactly as with Visual
+Studio publishing.
+
+### Making it automatic
+
+Add a `push: branches: [main]` trigger under `on:` in `cd.yml`. Every merged PR
+into `main` then deploys by itself.

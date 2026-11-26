@@ -1,0 +1,139 @@
+# =============================================================================
+# cd.yml — Deploy Brainova to Azure App Service (manual trigger)
+# =============================================================================
+# What this file does, in one sentence:
+#   when you click "Run workflow" in the Actions tab, GitHub builds and tests
+#   the code on `main`, publishes Brainova.PL, uploads it to the
+#   `brainova-backend` App Service, then calls /health/ready to prove the new
+#   version started and can reach the database.
+#
+# It NEVER runs by itself. Publishing from Visual Studio still works exactly
+# as before; this is just a second, cleaner way in (always tested code from
+# `main`, never whatever happens to be in your working folder).
+#
+# Needs ONE repository secret: AZURE_WEBAPP_PUBLISH_PROFILE
+#   = the whole .PublishSettings file from Azure portal -> brainova-backend ->
+#     Overview -> "Download publish profile". Never commit that file.
+#
+# Full walkthrough: .github/workflows/README.md
+# =============================================================================
+
+name: deploy
+
+# -----------------------------------------------------------------------------
+# on: WHEN does this run? Only when you press the button.
+# -----------------------------------------------------------------------------
+# To make it automatic later (deploy on every merge to main), add:
+#   push:
+#     branches: [main]
+on:
+  workflow_dispatch:
+
+# Deploying only needs to READ the code. The Azure credentials come from the
+# secret, not from GITHUB_TOKEN.
+permissions:
+  contents: read
+
+# Never run two deploys at the same time, and never cancel one halfway
+# (a half-uploaded app is worse than a slow one). A second click waits.
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  SOLUTION: Brainova.slnx
+  CONFIGURATION: Release
+  API_PROJECT: Brainova.PL/Brainova.PL.csproj
+  AZURE_WEBAPP_NAME: brainova-backend
+  SITE_URL: https://brainova-backend-grb6egdgg2d8epdw.israelcentral-01.azurewebsites.net
+
+jobs:
+  deploy:
+    name: build, test and deploy
+
+    # "Run workflow" lets you pick any branch from a dropdown. Production must
+    # only ever get `main`, so any other branch is skipped here.
+    if: github.ref == 'refs/heads/main'
+
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    # Shows up as a "production" deployment on the repo page, with a link to
+    # the live site. GitHub creates the environment the first time this runs.
+    environment:
+      name: production
+      url: ${{ env.SITE_URL }}
+
+    steps:
+      # --- 1-4. Same as ci.yml: checkout, .NET 10, NuGet cache, restore ----
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 10 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      - name: Restore
+        run: dotnet restore ${{ env.SOLUTION }}
+
+      # --- 5-6. Build and test ----------------------------------------------
+      # Run the tests AGAIN here, even though ci.yml already ran them on the
+      # PR: this is the last gate before real users get the code.
+      - name: Build
+        run: dotnet build ${{ env.SOLUTION }} --configuration ${{ env.CONFIGURATION }} --no-restore
+
+      - name: Test
+        run: dotnet test ${{ env.SOLUTION }} --configuration ${{ env.CONFIGURATION }} --no-build
+
+      # --- 7. Publish -------------------------------------------------------
+      # Same thing Visual Studio's Publish does before uploading: collect the
+      # API's DLLs + appsettings.json (blank secrets) into one folder.
+      # Framework-dependent, so a Linux runner can build it for the Windows app.
+      - name: Publish
+        run: >
+          dotnet publish ${{ env.API_PROJECT }}
+          --configuration ${{ env.CONFIGURATION }}
+          --no-build
+          --output ./publish
+
+      # --- 8. Protect uploaded images -----------------------------------------
+      # Real MRI scans and Grad-CAM heatmaps live on the server in
+      # site/wwwroot/App_Data/{mri,gradcam}. They are not in git, so the
+      # package must not carry an App_Data folder that could replace them.
+      - name: Remove App_Data from the package
+        run: rm -rf ./publish/App_Data
+
+      # --- 9. Upload to Azure ------------------------------------------------
+      #   clean: false  -> only add/replace the app's own files; never delete
+      #                    files that are on the server but not in the package
+      #                    (= the uploaded images). Same idea as Visual Studio's
+      #                    "SkipExtraFilesOnServer" in your .pubxml.
+      - name: Deploy to Azure App Service
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: ${{ env.AZURE_WEBAPP_NAME }}
+          publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
+          package: ./publish
+          clean: false
+
+      # --- 10. Smoke test ----------------------------------------------------
+      # /health/ready returns 200 only when the API is up AND the database
+      # answers. The Free plan cold-starts slowly, so retry for ~3 minutes
+      # before calling the deploy a failure.
+      - name: Check /health/ready
+        run: >
+          curl --fail --silent --show-error
+          --retry 12 --retry-delay 15 --retry-all-errors
+          --max-time 30
+          "${{ env.SITE_URL }}/health/ready"

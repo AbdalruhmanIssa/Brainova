@@ -99,13 +99,30 @@ jobs:
       # --- 7. Publish -------------------------------------------------------
       # Same thing Visual Studio's Publish does before uploading: collect the
       # API's DLLs + appsettings.json (blank secrets) into one folder.
-      # Framework-dependent, so a Linux runner can build it for the Windows app.
+      #
+      #   --runtime win-x86       : the App Service runs as a 32-bit Windows
+      #                             process (Configuration -> Platform). Without
+      #                             this, publish copies native DLLs for EVERY
+      #                             platform (iOS, Android, macOS, Linux ARM...)
+      #                             into runtimes/ — ~290 MB the server never
+      #                             uses. The Free plan's temp disk is too small
+      #                             to unzip that ("not enough space on the
+      #                             disk"). With it: only the win-x86 natives
+      #                             (SqlClient, QuestPDF), ~55 MB in total.
+      #   --self-contained false  : .NET itself is already installed on Azure;
+      #                             don't ship another copy of it.
+      # No --no-build: picking a runtime changes the output, so publish builds
+      # again for win-x86. The tests above already ran on the same code.
       - name: Publish
         run: >
           dotnet publish ${{ env.API_PROJECT }}
           --configuration ${{ env.CONFIGURATION }}
-          --no-build
+          --runtime win-x86
+          --self-contained false
           --output ./publish
+
+      - name: Show package size
+        run: du -sh ./publish
 
       # --- 8. Protect uploaded images -----------------------------------------
       # Real MRI scans and Grad-CAM heatmaps live on the server in

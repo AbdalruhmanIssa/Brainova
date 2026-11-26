@@ -48,6 +48,9 @@ env:
   API_PROJECT: Brainova.PL/Brainova.PL.csproj
   AZURE_WEBAPP_NAME: brainova-backend
   SITE_URL: https://brainova-backend-grb6egdgg2d8epdw.israelcentral-01.azurewebsites.net
+  # Kudu, the App Service's deployment/file service. Used to take the app
+  # offline while files are replaced.
+  SCM_URL: https://brainova-backend-grb6egdgg2d8epdw.scm.israelcentral-01.azurewebsites.net
 
 jobs:
   deploy:
@@ -131,7 +134,43 @@ jobs:
       - name: Remove App_Data from the package
         run: rm -rf ./publish/App_Data
 
-      # --- 9. Upload to Azure ------------------------------------------------
+      # --- 9. Take the app offline ----------------------------------------------
+      # On Windows a running app LOCKS its own DLLs, so they cannot be
+      # overwritten ("Incrementally deploying to C:\home\site\wwwroot ...
+      # Deployment Failed"). Visual Studio avoids this with
+      # EnableMsDeployAppOffline in your .pubxml. We do the same by hand:
+      # dropping a file named app_offline.htm into wwwroot makes the ASP.NET
+      # Core Module stop the app and show that page until the file is removed.
+      #
+      # The Kudu user/password are read from the same publish-profile secret,
+      # so no new secret is needed. ::add-mask:: hides the password in logs.
+      - name: Read Kudu credentials from the publish profile
+        env:
+          PUBLISH_PROFILE: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
+        run: |
+          python3 - <<'PY'
+          import os, xml.etree.ElementTree as ET
+          root = ET.fromstring(os.environ["PUBLISH_PROFILE"].strip().lstrip("\ufeff"))
+          p = next(x for x in root.iter("publishProfile") if x.get("publishMethod") == "MSDeploy")
+          print(f"::add-mask::{p.get('userPWD')}")
+          with open(os.environ["GITHUB_ENV"], "a") as f:
+              f.write(f"SCM_USER={p.get('userName')}\n")
+              f.write(f"SCM_PASSWORD={p.get('userPWD')}\n")
+          PY
+
+      - name: Take the app offline
+        id: offline
+        run: |
+          echo '<!DOCTYPE html><html><body><h1>Brainova is updating</h1><p>Back in about a minute.</p></body></html>' > app_offline.htm
+          curl --fail-with-body --silent --show-error \
+            --user "$SCM_USER:$SCM_PASSWORD" \
+            --request PUT --header "If-Match: *" \
+            --data-binary @app_offline.htm \
+            "$SCM_URL/api/vfs/site/wwwroot/app_offline.htm"
+          # Give the app a few seconds to shut down and release its files.
+          sleep 15
+
+      # --- 10. Upload to Azure ------------------------------------------------
       #   clean: false  -> only add/replace the app's own files; never delete
       #                    files that are on the server but not in the package
       #                    (= the uploaded images). Same idea as Visual Studio's
@@ -144,7 +183,18 @@ jobs:
           package: ./publish
           clean: false
 
-      # --- 10. Smoke test ----------------------------------------------------
+      # --- 11. Bring the app back --------------------------------------------
+      # always(): even if the upload failed, remove app_offline.htm so the
+      # site comes back (on the old version) instead of staying offline.
+      - name: Bring the app back online
+        if: always() && steps.offline.outcome == 'success'
+        run: |
+          curl --fail-with-body --silent --show-error \
+            --user "$SCM_USER:$SCM_PASSWORD" \
+            --request DELETE --header "If-Match: *" \
+            "$SCM_URL/api/vfs/site/wwwroot/app_offline.htm"
+
+      # --- 12. Smoke test ----------------------------------------------------
       # /health/ready returns 200 only when the API is up AND the database
       # answers. The Free plan cold-starts slowly, so retry for ~3 minutes
       # before calling the deploy a failure.

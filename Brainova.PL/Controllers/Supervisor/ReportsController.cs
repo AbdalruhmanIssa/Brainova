@@ -50,16 +50,9 @@ namespace Brainova.PL.Controllers.Supervisor
 
             var raw = await _svc.GetSupervisorDetailsAsync(supervisorId, reportId);
 
-            var relative = Url.Action(
-                action: "GetImage",
-                controller: "MriCases",
-                values: new
-                {
-                    area = "Student",
-                    fileName = raw.StoredFileName
-                });
-
-            var imageUrl = $"{Request.Scheme}://{Request.Host}{relative}";
+            // Served by CaseImagesController; a supervisor may only open images
+            // of their own students' cases.
+            var imageUrl = $"{Request.Scheme}://{Request.Host}/api/CaseImages/mri/{raw.StoredFileName}";
 
             var dto = new SupervisorReportDetailsResponse
             {

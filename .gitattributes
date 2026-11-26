@@ -4,6 +4,16 @@
 * text=auto
 
 ###############################################################################
+# Force CRLF in the working tree for C# sources.
+#
+# 'text=auto' above already normalizes to LF *inside the repository*. This pins
+# the checkout side too, so no editor or tool can produce a mixed-ending file.
+# Stops Visual Studio's 'Inconsistent Line Endings' prompt and keeps line-ending
+# churn out of diffs and out of 'dotnet format --verify-no-changes' in CI.
+###############################################################################
+*.cs text eol=crlf
+
+###############################################################################
 # Set default behavior for command prompt diff.
 #
 # This is need for earlier builds of msysgit that does not have it on by

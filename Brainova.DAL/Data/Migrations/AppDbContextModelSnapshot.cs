@@ -17,7 +17,7 @@ namespace Brainova.DAL.Migrations
         {
 #pragma warning disable 612, 618
             modelBuilder
-                .HasAnnotation("ProductVersion", "10.0.3")
+                .HasAnnotation("ProductVersion", "10.0.9")
                 .HasAnnotation("Relational:MaxIdentifierLength", 128);
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
@@ -114,6 +114,12 @@ namespace Brainova.DAL.Migrations
                     b.Property<bool>("PhoneNumberConfirmed")
                         .HasColumnType("bit");
 
+                    b.Property<int>("ResetPasswordFailedAttempts")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("ResetPasswordLockedUntil")
+                        .HasColumnType("datetime2");
+
                     b.Property<string>("SecurityStamp")
                         .HasColumnType("nvarchar(max)");
 
@@ -140,6 +146,51 @@ namespace Brainova.DAL.Migrations
                     b.HasIndex("SupervisorUserId");
 
                     b.ToTable("AspNetUsers", (string)null);
+                });
+
+            modelBuilder.Entity("Brainova.DAL.Modles.Feedback", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Comment")
+                        .IsRequired()
+                        .HasMaxLength(3000)
+                        .HasColumnType("nvarchar(3000)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<bool>("IsSeen")
+                        .HasColumnType("bit");
+
+                    b.Property<Guid>("ReportId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("StudentId")
+                        .IsRequired()
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<string>("SupervisorId")
+                        .IsRequired()
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ReportId")
+                        .IsUnique();
+
+                    b.HasIndex("StudentId");
+
+                    b.HasIndex("SupervisorId");
+
+                    b.ToTable("Feedbacks", (string)null);
                 });
 
             modelBuilder.Entity("Brainova.DAL.Modles.MriCase", b =>
@@ -480,6 +531,33 @@ namespace Brainova.DAL.Migrations
                         .OnDelete(DeleteBehavior.Restrict);
 
                     b.Navigation("SupervisorUser");
+                });
+
+            modelBuilder.Entity("Brainova.DAL.Modles.Feedback", b =>
+                {
+                    b.HasOne("Brainova.DAL.Modles.Report", "Report")
+                        .WithMany()
+                        .HasForeignKey("ReportId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Brainova.DAL.Modles.ApplicationUser", "Student")
+                        .WithMany()
+                        .HasForeignKey("StudentId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Brainova.DAL.Modles.ApplicationUser", "Supervisor")
+                        .WithMany()
+                        .HasForeignKey("SupervisorId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Report");
+
+                    b.Navigation("Student");
+
+                    b.Navigation("Supervisor");
                 });
 
             modelBuilder.Entity("Brainova.DAL.Modles.MriCase", b =>

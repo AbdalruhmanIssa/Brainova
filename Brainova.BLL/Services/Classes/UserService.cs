@@ -381,7 +381,7 @@ public async Task<List<SupervisorStudentListItemResponse>> GetSupervisorStudents
             var tokenEscaped = Uri.EscapeDataString(token);
 
             var link =
-    $"{httpRequest.Scheme}://{httpRequest.Host}/set-password.html?userId={createdUser.Id}&token={tokenEscaped}";
+    $"https://brainovaproject.onrender.com/auth/set-password?userId={createdUser.Id}&token={tokenEscaped}";
 
             await _emailSender.SendEmailAsync(
                 createdUser.Email!,

@@ -137,7 +137,7 @@ namespace Brainova.BLL.Services.Classes
             return "Feedback added successfully";
         }
 
-        public async Task<FeedbackResponse> GetForSupervisorAsync(string supervisorId, Guid reportId)
+        public async Task<FeedbackResponse?> GetForSupervisorAsync(string supervisorId, Guid reportId)
         {
             if (string.IsNullOrWhiteSpace(supervisorId))
                 throw new UnauthorizedException("Supervisor is not authenticated");
@@ -149,8 +149,10 @@ namespace Brainova.BLL.Services.Classes
         .ThenInclude(c => c.AiResult)
     .FirstOrDefaultAsync(r => r.Id == reportId);
 
+            // Report not found: return null so the controller can respond with
+            // { success: true, data: null } instead of a 404.
             if (report is null)
-                throw new NotFoundException("Report not found");
+                return null;
 
             if (report.Student is null)
                 throw new BadRequestException("Student data is missing for this report");
@@ -190,8 +192,11 @@ namespace Brainova.BLL.Services.Classes
                 )
                 .FirstOrDefaultAsync();
 
+            // Feedback not found for this report: return null so the controller
+            // can respond with { success: true, data: null } instead of a 404.
             if (feedback is null)
-                throw new NotFoundException("Feedback not found for this report");
+                return null;
+
             feedback.CreatedAt = TimeZoneInfo.ConvertTimeFromUtc(
     feedback.CreatedAt,
     TimeZoneInfo.FindSystemTimeZoneById("Asia/Hebron")

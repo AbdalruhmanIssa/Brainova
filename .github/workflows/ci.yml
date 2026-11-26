@@ -1,0 +1,175 @@
+# =============================================================================
+# ci.yml — Continuous Integration for Brainova
+# =============================================================================
+# What this file does, in one sentence:
+#   every time code is pushed or a pull request is opened, GitHub starts a
+#   clean Linux machine, downloads the repo, and runs
+#       dotnet restore  ->  dotnet build  ->  dotnet test
+#   If any of the three fails, the commit gets a red X; if all pass, a green
+#   check. Nobody has to remember to run the tests by hand.
+#
+# Full walkthrough: .github/workflows/README.md
+# =============================================================================
+
+# The name shown in the "Actions" tab and next to each commit's check mark.
+name: ci
+
+# -----------------------------------------------------------------------------
+# on: WHEN does this workflow run?
+# -----------------------------------------------------------------------------
+on:
+  # 1) On every push to the two long-lived branches.
+  #    develop = daily work, main = release branch fed from develop by PR.
+  #    Pushes to other branches (e.g. taima-feature) are NOT listed here on
+  #    purpose: they are covered by the pull_request trigger below, so listing
+  #    them here too would run the same commit twice.
+  push:
+    branches: [develop, main]
+
+  # 2) On every pull request, whatever branch it comes from.
+  #    This is what lets a reviewer see "tests pass" before clicking Merge.
+  pull_request:
+
+  # 3) Adds a "Run workflow" button in the Actions tab, so CI can be started
+  #    by hand without pushing a dummy commit.
+  workflow_dispatch:
+
+# -----------------------------------------------------------------------------
+# permissions: WHAT may this workflow do to the repo?
+# -----------------------------------------------------------------------------
+# Every run gets a temporary GITHUB_TOKEN. By default it can have write access.
+# CI only needs to READ the code, so we lower it to read-only. If a NuGet
+# package or an action were ever compromised, it could not push to the repo.
+permissions:
+  contents: read
+
+# -----------------------------------------------------------------------------
+# concurrency: what if I push twice in a row?
+# -----------------------------------------------------------------------------
+# All runs for the same workflow + same branch share one "group". When a new
+# run starts in a group, the older one still in progress is cancelled, because
+# its result no longer matters — only the newest commit does.
+#   github.workflow = "ci"
+#   github.ref      = e.g. "refs/heads/develop" or "refs/pull/7/merge"
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# -----------------------------------------------------------------------------
+# env: variables available to every step below
+# -----------------------------------------------------------------------------
+env:
+  # Hide the ".NET welcome" banner so the logs are shorter.
+  DOTNET_NOLOGO: true
+  # Do not send usage telemetry to Microsoft from the build machine.
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  # One place to change the solution file and build configuration.
+  SOLUTION: Brainova.slnx
+  CONFIGURATION: Release
+
+# -----------------------------------------------------------------------------
+# jobs: the actual work
+# -----------------------------------------------------------------------------
+# A workflow is made of jobs; a job is a list of steps that run in order on
+# one machine. We only need one job.
+jobs:
+  build-and-test:
+    name: build and test
+
+    # The machine ("runner") GitHub lends us. Ubuntu is the fastest and
+    # cheapest, and .NET is cross-platform, so we do not need Windows here.
+    # Side benefit: Linux file names are case-sensitive, so a path that only
+    # works on Windows by accident ("Services" vs "services") is caught here.
+    runs-on: ubuntu-latest
+
+    # Safety net: if something hangs, kill the job after 15 minutes instead
+    # of the default 6 hours.
+    timeout-minutes: 15
+
+    steps:
+      # --- 1. Get the code --------------------------------------------------
+      # The runner starts EMPTY. This action clones the repo at the exact
+      # commit that triggered the run. (The default is a shallow clone of
+      # just that commit, which is all a build needs. secret-scan.yml uses
+      # fetch-depth: 0 because gitleaks has to read the whole history.)
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # --- 2. Install the .NET SDK -----------------------------------------
+      # All four projects target net10.0, so we need the .NET 10 SDK.
+      # "10.0.x" means "the newest 10.0 patch", so security patches are picked
+      # up automatically. The SDK also understands the .slnx solution format.
+      - name: Setup .NET 10 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      # --- 3. Cache NuGet packages -----------------------------------------
+      # Without this, every run downloads EF Core, OnnxRuntime, QuestPDF...
+      # again from nuget.org. This step saves ~/.nuget/packages after a run
+      # and puts it back at the start of the next one.
+      #
+      #   key          = the exact name of the saved cache. It contains a hash
+      #                  of every .csproj file, so the moment a package is
+      #                  added or its version changes, the hash changes and a
+      #                  fresh cache is built.
+      #   restore-keys = fallback. If there is no exact match, take the most
+      #                  recent cache that starts with "Linux-nuget-". Most of
+      #                  the packages are still valid; restore only downloads
+      #                  what is missing.
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      # --- 4. Restore -------------------------------------------------------
+      # Downloads the NuGet packages listed in the four .csproj files (or
+      # takes them from the cache above). Done as its own step so that if it
+      # fails, we know it is a package/network problem, not a code problem.
+      - name: Restore
+        run: dotnet restore ${{ env.SOLUTION }}
+
+      # --- 5. Build ---------------------------------------------------------
+      # Compiles DAL -> BLL -> PL -> Tests. A compiler error (CS####) fails
+      # the job right here.
+      #   --configuration Release : build the optimized version, the same one
+      #                             that gets deployed.
+      #   --no-restore            : step 4 already restored; don't do it twice.
+      # No secrets are needed: connection string / JWT key / SMTP password are
+      # only read when the API STARTS, and CI never starts the API.
+      - name: Build
+        run: dotnet build ${{ env.SOLUTION }} --configuration ${{ env.CONFIGURATION }} --no-restore
+
+      # --- 6. Test ----------------------------------------------------------
+      # Runs every xUnit test in Brainova.Tests. One failing test = red X.
+      #   --no-build            : use the DLLs from step 5, don't compile again.
+      #   --logger "trx;..."    : also write the results to a .trx file (a
+      #                           report Visual Studio can open).
+      #   --results-directory   : where that file goes.
+      # The tests use Moq + MockQueryable, so they need no database.
+      - name: Test
+        run: >
+          dotnet test ${{ env.SOLUTION }}
+          --configuration ${{ env.CONFIGURATION }}
+          --no-build
+          --logger "trx;LogFileName=test-results.trx"
+          --results-directory ./TestResults
+
+      # --- 7. Keep the test report -----------------------------------------
+      # The runner is deleted when the job ends. This uploads the .trx file so
+      # it can be downloaded from the run's page ("Artifacts" section).
+      #   if: always()  : normally a step is skipped once an earlier step has
+      #                   failed. The report matters MOST when tests fail, so
+      #                   we force this step to run anyway.
+      #   retention-days: delete the file after 14 days to save storage.
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: ./TestResults
+          if-no-files-found: ignore
+          retention-days: 14

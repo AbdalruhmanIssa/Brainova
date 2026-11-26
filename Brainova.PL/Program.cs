@@ -1,4 +1,4 @@
-using Brainova.BLL.Exceptions;
+﻿using Brainova.BLL.Exceptions;
 using Brainova.BLL.Hubs;
 using Brainova.BLL.Services.Classes;
 using Brainova.BLL.Services.Interface;
@@ -19,12 +19,43 @@ using Microsoft.IdentityModel.Tokens;
 using Microsoft.ML.OnnxRuntime;
 using Scalar.AspNetCore;
 using Mapster;
-using Brainova.PL.Middlewares;
 
 using Brainova.BLL.Mapping;
+using Serilog;
+using Serilog.Events;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+
+// ==============================
+// Serilog — two-stage initialization.
+// 1) A bootstrap logger exists from the very first line, so anything that fails while
+//    the host is being built (missing connection string, bad config) is still logged.
+// 2) AddSerilog below replaces it with the full logger, configured from the "Serilog"
+//    section of appsettings.json / appsettings.{Environment}.json.
+// ==============================
+Log.Logger = new LoggerConfiguration()
+    .WriteTo.Console()
+    .CreateBootstrapLogger();
+
+// Top-level statements can't be wrapped in try/catch without re-indenting this whole
+// file, so a crash that escapes Program.cs is logged from this handler instead.
+AppDomain.CurrentDomain.UnhandledException += (_, e) =>
+{
+    // `dotnet ef` stops the host on purpose with this exception — not a crash.
+    if (e.ExceptionObject is HostAbortedException) return;
+
+    Log.Fatal(e.ExceptionObject as Exception, "Brainova API terminated unexpectedly.");
+    Log.CloseAndFlush();
+};
 
 var builder = WebApplication.CreateBuilder(args);
 TypeAdapterConfig.GlobalSettings.Scan(typeof(MapsterConfig).Assembly);
+
+// Serilog becomes the only logging provider: every ILogger<T> injected anywhere in
+// PL/BLL/DAL writes through it. Levels and sinks live in config, not in code.
+builder.Services.AddSerilog((services, loggerConfiguration) => loggerConfiguration
+    .ReadFrom.Configuration(builder.Configuration)
+    .ReadFrom.Services(services)
+    .Enrich.FromLogContext());
 
 // Configure for cloud deployment (OnRender, Azure App Service, Docker, etc.)
 // Only apply this in non-Development so launchSettings.json (and Scalar) work locally.
@@ -113,12 +144,32 @@ builder.Services.AddCors(options =>
             .AllowCredentials()
     );
 });
-// Database configuration - read from environment variables or appsettings
+// Database configuration - environment variables first, then user-secrets / appsettings
 var connectionString = Environment.GetEnvironmentVariable("DB_CONNECTION_STRING")
     ?? builder.Configuration.GetConnectionString("Default");
 
+if (string.IsNullOrWhiteSpace(connectionString))
+    throw new InvalidOperationException(
+        "No database connection string is configured. " +
+        "Local development: dotnet user-secrets set \"ConnectionStrings:Default\" \"<connection string>\". " +
+        "Production: set the DB_CONNECTION_STRING (or ConnectionStrings__Default) environment variable. " +
+        "See the Configuration section of README.md.");
+
 builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseSqlServer(connectionString));
+    options.UseSqlServer(connectionString, sql =>
+        sql.EnableRetryOnFailure(
+            maxRetryCount: 3,
+            maxRetryDelay: TimeSpan.FromSeconds(5),
+            errorNumbersToAdd: null)));
+
+// ==============================
+// Health checks (mapped at the bottom of this file)
+//   /health/live  — no checks: answers 200 as long as the process is running.
+//   /health/ready — also opens a connection to SQL Server; 503 if the database is unreachable.
+// The "ready" tag decides which checks run on which URL.
+// ==============================
+builder.Services.AddHealthChecks()
+    .AddDbContextCheck<AppDbContext>(name: "database", tags: new[] { "ready" });
 
 // ==============================
 // Identity
@@ -157,7 +208,15 @@ builder.Services
     {
         var jwt = builder.Configuration.GetSection("jwtOptions");
 
-        var secretBase64 = jwt["SecretKey"]!;
+        var secretBase64 = jwt["SecretKey"];
+        if (string.IsNullOrWhiteSpace(secretBase64))
+            throw new InvalidOperationException(
+                "No JWT signing key is configured. " +
+                "Local development: dotnet user-secrets set \"jwtOptions:SecretKey\" \"<base64 key>\". " +
+                "Production: set the jwtOptions__SecretKey environment variable. " +
+                "Generate one with: openssl rand -base64 32. " +
+                "See the Configuration section of README.md.");
+
         var keyBytes = Convert.FromBase64String(secretBase64);
 
         options.TokenValidationParameters = new TokenValidationParameters
@@ -235,6 +294,33 @@ builder.Services.AddHttpContextAccessor();
 // Add services to the container.
 
 builder.Services.AddControllers();
+
+// ==============================
+// Model-validation errors (DataAnnotations like [Required], [EmailAddress], etc.)
+// run BEFORE the controller/exception middleware, so by default ASP.NET returns
+// its RFC ProblemDetails shape. Override it to match our standard error body:
+//   { "success": false, "message": "..." }
+// We surface the first validation message so the frontend can show it directly.
+// ==============================
+builder.Services.Configure<Microsoft.AspNetCore.Mvc.ApiBehaviorOptions>(options =>
+{
+    options.InvalidModelStateResponseFactory = context =>
+    {
+        var message = context.ModelState
+            .Where(kvp => kvp.Value?.Errors.Count > 0)
+            .SelectMany(kvp => kvp.Value!.Errors)
+            .Select(e => e.ErrorMessage)
+            .FirstOrDefault(m => !string.IsNullOrWhiteSpace(m))
+            ?? "Invalid request.";
+
+        return new Microsoft.AspNetCore.Mvc.BadRequestObjectResult(new
+        {
+            success = false,
+            message
+        });
+    };
+});
+
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddOpenApi();
 
@@ -243,6 +329,31 @@ var app = builder.Build();
 // MUST be the first middleware so all subsequent middleware sees the correct
 // scheme/host/IP forwarded by the upstream proxy (HTTPS, real client IP, etc.).
 app.UseForwardedHeaders();
+
+// One structured line per request — method, path, status code, elapsed ms — instead of
+// ASP.NET's several lines. Placed after forwarded headers so it sees the real client IP,
+// and before ApiExceptionMiddleware so it records the status code that middleware returns.
+// RequestPath excludes the query string, so SignalR's ?access_token=... is never logged.
+app.UseSerilogRequestLogging(options =>
+{
+    options.EnrichDiagnosticContext = (diagnosticContext, httpContext) =>
+    {
+        diagnosticContext.Set("ClientIp", httpContext.Connection.RemoteIpAddress?.ToString());
+
+        // Runs after the request completes, so authentication has already populated User.
+        var userId = httpContext.User.FindFirst("Id")?.Value;
+        if (userId is not null)
+            diagnosticContext.Set("UserId", userId);
+    };
+
+    // Azure and the deploy pipeline poll /health every minute or so. Log those requests only
+    // when they fail, so they don't drown out real traffic. Everything else keeps the
+    // defaults: Error for 5xx or an exception, Information otherwise.
+    options.GetLevel = (httpContext, _, exception) =>
+        exception is not null || httpContext.Response.StatusCode >= 500 ? LogEventLevel.Error
+        : httpContext.Request.Path.StartsWithSegments("/health") ? LogEventLevel.Verbose
+        : LogEventLevel.Information;
+});
 
 app.UseCors("AllowFrontend");
 
@@ -254,11 +365,26 @@ if (app.Environment.IsDevelopment())
     app.MapOpenApi();
     app.MapScalarApiReference();
 }
+// Startup seeding must never take the whole API down.
+// If the database is unreachable (network block, bad credentials, host down), log it
+// loudly and keep serving: the process stays up, non-DB endpoints still respond, and
+// the real exception lands in the log instead of a blank HTTP 500.30 with no detail.
 using (var scope = app.Services.CreateScope())
 {
-    var seed = scope.ServiceProvider.GetRequiredService<ISeedData>();
-    await seed.DataSeedingAsync();                // migrate
-    await seed.IdentitySeedingAsync();   // roles + users
+    var startupLogger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+    try
+    {
+        var seed = scope.ServiceProvider.GetRequiredService<ISeedData>();
+        await seed.DataSeedingAsync();                // migrate
+        await seed.IdentitySeedingAsync();   // roles + users
+        startupLogger.LogInformation("Database migration and seeding completed successfully.");
+    }
+    catch (Exception ex)
+    {
+        startupLogger.LogCritical(ex,
+            "Database migration/seeding FAILED at startup. The API is starting anyway, but " +
+            "every database-backed endpoint will fail until this is resolved.");
+    }
 }
 app.UseDefaultFiles();
 app.UseStaticFiles();
@@ -322,5 +448,10 @@ app.UseAuthorization();
 
 app.MapControllers();
 app.MapHub<NotificationHub>("/hubs/notifications");
+
+// Anonymous on purpose: Azure and the deploy pipeline call these without a token.
+// The response body is just "Healthy" / "Unhealthy" — no exception details, no connection info.
+app.MapHealthChecks("/health/live", new HealthCheckOptions { Predicate = _ => false });
+app.MapHealthChecks("/health/ready", new HealthCheckOptions { Predicate = check => check.Tags.Contains("ready") });
 
 app.Run();

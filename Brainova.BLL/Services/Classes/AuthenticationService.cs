@@ -1,4 +1,5 @@
 ﻿using Brainova.BLL.DTOs.Auth;
+using Brainova.BLL.DTOs.Realtime;
 using Brainova.BLL.Exceptions;
 using Brainova.BLL.Services.Interface;
 using Brainova.DAL.Modles;
@@ -6,9 +7,11 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.UI.Services;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 using Microsoft.IdentityModel.Tokens;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
+using System.Security.Cryptography;
 
 namespace Brainova.BLL.Services.Classes
 {
@@ -18,17 +21,23 @@ namespace Brainova.BLL.Services.Classes
         private readonly IConfiguration _configuration;
         private readonly IEmailSender _emailSender;
         private readonly SignInManager<ApplicationUser> _signInManager;
+        private readonly INotificationService _notifications;
+        private readonly ILogger<AuthenticationService> _logger;
 
         public AuthenticationService(
             UserManager<ApplicationUser> userManager,
             IConfiguration configuration,
             IEmailSender emailSender,
-            SignInManager<ApplicationUser> signInManager)
+            SignInManager<ApplicationUser> signInManager,
+            INotificationService notifications,
+            ILogger<AuthenticationService> logger)
         {
             _userManager = userManager;
             _configuration = configuration;
             _emailSender = emailSender;
             _signInManager = signInManager;
+            _notifications = notifications;
+            _logger = logger;
         }
 
         public async Task<UserResponse> LoginAsync(LoginRequest request)
@@ -104,22 +113,40 @@ namespace Brainova.BLL.Services.Classes
 
             // ✅ Security: لا تكشف إذا المستخدم موجود أو لا
             if (user is null)
+            {
+                // The attempted email/username is deliberately not logged: people sometimes
+                // type their password into that box by mistake.
+                _logger.LogWarning("Login failed: no account matches the given email/username");
                 throw new BadRequestException("Invalid email/username or password");
+            }
 
             if (user.IsBlocked)
+            {
+                _logger.LogWarning("Login refused for user {UserId}: account is blocked", user.Id);
                 throw new ForbiddenException("Your account is blocked");
+            }
 
             var result = await _signInManager.CheckPasswordSignInAsync(user, request.Password, true);
 
             if (result.Succeeded)
+            {
+                _logger.LogInformation("User {UserId} logged in", user.Id);
                 return (user, result);
+            }
 
             if (result.IsLockedOut)
+            {
+                _logger.LogWarning("Login refused for user {UserId}: locked out after too many failed attempts", user.Id);
                 throw new ForbiddenException("Your account is locked");
+            }
 
             if (result.IsNotAllowed)
+            {
+                _logger.LogInformation("Login refused for user {UserId}: email not confirmed", user.Id);
                 throw new BadRequestException("Please confirm your email");
+            }
 
+            _logger.LogWarning("Login failed for user {UserId}: wrong password", user.Id);
             throw new BadRequestException("Invalid email/username or password");
         }
 
@@ -161,13 +188,15 @@ namespace Brainova.BLL.Services.Classes
             if (!roleResult.Succeeded)
                 throw new BadRequestException(string.Join(";", roleResult.Errors.Select(e => e.Description)));
 
+            _logger.LogInformation("Student {UserId} registered under supervisor {SupervisorId}",
+                user.Id, request.SupervisorUserId);
 
             // 4) Email confirmation
             var token = await _userManager.GenerateEmailConfirmationTokenAsync(user);
             var escaped = Uri.EscapeDataString(token);
 
             var confirmUrl =
-                $"{httpRequest.Scheme}://{httpRequest.Host}/api/Identity/Auths/confirm-email?token={escaped}&userId={user.Id}";
+                $"https://brainovaproject.onrender.com/auth/confirm-email?token={escaped}&userId={user.Id}";
 
             await _emailSender.SendEmailAsync(
                 user.Email!,
@@ -176,6 +205,38 @@ namespace Brainova.BLL.Services.Classes
                 $"<p>Please confirm your email:</p>" +
                 $"<a href='{confirmUrl}'>Confirm Email</a>"
             );
+
+            // -----------------------------------------------------------
+            // Real-time pushes:
+            //  1. Admins + super-admins → user-management table gains a row.
+            //  2. The student's chosen supervisor → /Supervisor/Students gains
+            //     a row.
+            // Self-registration has no acting admin, so ByUserId is null.
+            // Best-effort: a SignalR failure must not roll back the registration.
+            // -----------------------------------------------------------
+            try
+            {
+                await _notifications.NotifyAdminsUserListChangedAsync(new UserListChangePayload
+                {
+                    Kind = UserListChangeKinds.Created,
+                    UserId = user.Id,
+                    UserName = user.UserName,
+                    FullName = user.FullName,
+                    Role = "Student",
+                    ByUserId = null
+                });
+
+                if (!string.IsNullOrWhiteSpace(user.SupervisorUserId))
+                {
+                    await _notifications.NotifySupervisorStudentsChangedAsync(
+                        user.SupervisorUserId);
+                }
+            }
+            catch (Exception ex)
+            {
+                // Best-effort: the registration itself has already succeeded.
+                _logger.LogWarning(ex, "Real-time notification failed after registering student {UserId}", user.Id);
+            }
 
             return "Registration successful. Please check your email to confirm your account.";
         }
@@ -190,20 +251,69 @@ namespace Brainova.BLL.Services.Classes
             var result = await _userManager.ConfirmEmailAsync(user, decodedToken);
 
             if (!result.Succeeded)
+            {
+                _logger.LogWarning("Email confirmation failed for user {UserId}: {Errors}",
+                    user.Id, string.Join("; ", result.Errors.Select(e => e.Code)));
                 throw new BadRequestException("Email confirmation failed");
+            }
+
+            _logger.LogInformation("User {UserId} confirmed their email", user.Id);
+
+            // -----------------------------------------------------------
+            // Real-time push: admins + super-admins see the EmailConfirmed
+            // column flip live without refreshing the user-management table.
+            // Best-effort — confirmation already committed in the DB.
+            // -----------------------------------------------------------
+            try
+            {
+                var roles = await _userManager.GetRolesAsync(user);
+
+                await _notifications.NotifyAdminsUserListChangedAsync(new UserListChangePayload
+                {
+                    Kind = UserListChangeKinds.EmailConfirmed,
+                    UserId = user.Id,
+                    UserName = user.UserName,
+                    FullName = user.FullName,
+                    Role = roles.FirstOrDefault(),
+                    ByUserId = null  // self-action via email link, no admin involved
+                });
+            }
+            catch (Exception ex)
+            {
+                // Best-effort: the confirmation is already saved.
+                _logger.LogWarning(ex, "Real-time notification failed after user {UserId} confirmed their email", user.Id);
+            }
 
             return "Email confirmed successfully";
         }
 
+        // Reset codes are only 4 digits (9,000 possibilities), so guesses are limited per USER,
+        // not per code: otherwise an attacker would just request a fresh code after every few
+        // guesses. MaxResetCodeAttempts wrong codes lock resets for that user for ResetLockDuration.
+        public const int MaxResetCodeAttempts = 5;
+        public static readonly TimeSpan ResetLockDuration = TimeSpan.FromHours(1);
+
         public async Task<bool> ForgotPasswordAsync(ForgetPasswordRequest request)
         {
             var user = await _userManager.FindByEmailAsync(request.Email);
-            if (user is null)
-                throw new NotFoundException("User not found");
 
-            // 4-digit code
-            var random = new Random();
-            var code = random.Next(1000, 9999).ToString();
+            // Same answer whether or not the email has an account, so this endpoint can't be
+            // used to find out who is registered. Only a real account gets an email.
+            if (user is null)
+            {
+                _logger.LogInformation("Password reset requested for an email with no account");
+                return true;
+            }
+
+            if (IsResetLocked(user))
+            {
+                _logger.LogWarning("Password reset code not sent to user {UserId}: resets locked until {LockedUntil}",
+                    user.Id, user.ResetPasswordLockedUntil);
+                return true;
+            }
+
+            // 4-digit code from a cryptographic random generator (System.Random is predictable).
+            var code = RandomNumberGenerator.GetInt32(1000, 10000).ToString();
 
             user.CodeResetPassword = code;
             user.CodeResetPasswordExpire = DateTime.UtcNow.AddMinutes(15);
@@ -219,6 +329,7 @@ namespace Brainova.BLL.Services.Classes
                 "<p>This code expires in 15 minutes.</p>"
             );
 
+            _logger.LogInformation("Password reset code sent to user {UserId}", user.Id);
 
             return true;
         }
@@ -227,13 +338,65 @@ namespace Brainova.BLL.Services.Classes
         {
             var user = await _userManager.FindByEmailAsync(request.Email);
             if (user is null)
-                throw new NotFoundException("User not found");
-
-            if (user.CodeResetPassword != request.Code)
+            {
+                // Same message as a wrong code: don't reveal whether the account exists.
+                _logger.LogInformation("Password reset attempted for an email with no account");
                 throw new BadRequestException("Invalid reset code");
+            }
+
+            if (IsResetLocked(user))
+            {
+                _logger.LogWarning("Password reset rejected for user {UserId}: locked until {LockedUntil}",
+                    user.Id, user.ResetPasswordLockedUntil);
+                throw new BadRequestException(TooManyAttemptsMessage(user));
+            }
+
+            if (user.CodeResetPassword is null)
+            {
+                _logger.LogInformation("Password reset rejected for user {UserId}: no code was requested", user.Id);
+                throw new BadRequestException("Invalid reset code");
+            }
 
             if (!user.CodeResetPasswordExpire.HasValue || user.CodeResetPasswordExpire < DateTime.UtcNow)
+            {
+                _logger.LogInformation("Password reset rejected for user {UserId}: code expired", user.Id);
                 throw new BadRequestException("Reset code expired");
+            }
+
+            // Count the attempt and SAVE it before comparing the code. If an attacker fires many
+            // guesses at once, they all read the same counter; UpdateAsync checks Identity's
+            // ConcurrencyStamp, so only one of them saves and the rest are rejected here without
+            // their code ever being compared.
+            user.ResetPasswordFailedAttempts++;
+            var attemptSaved = await _userManager.UpdateAsync(user);
+            if (!attemptSaved.Succeeded)
+            {
+                _logger.LogWarning("Password reset rejected for user {UserId}: could not record the attempt ({Errors})",
+                    user.Id, string.Join("; ", attemptSaved.Errors.Select(e => e.Code)));
+                throw new BadRequestException("Could not verify the code. Please try again.");
+            }
+
+            // Over the limit means an earlier lock failed to save; lock again without comparing.
+            if (user.ResetPasswordFailedAttempts > MaxResetCodeAttempts)
+            {
+                await LockResetsAsync(user);
+                throw new BadRequestException(TooManyAttemptsMessage(user));
+            }
+
+            if (!string.Equals(user.CodeResetPassword, request.Code, StringComparison.Ordinal))
+            {
+                if (user.ResetPasswordFailedAttempts >= MaxResetCodeAttempts)
+                {
+                    await LockResetsAsync(user);
+                    throw new BadRequestException(TooManyAttemptsMessage(user));
+                }
+
+                // Warning, not Information: several of these in a row for one user means someone
+                // is guessing the code.
+                _logger.LogWarning("Password reset rejected for user {UserId}: wrong code (attempt {Attempt} of {Max})",
+                    user.Id, user.ResetPasswordFailedAttempts, MaxResetCodeAttempts);
+                throw new BadRequestException("Invalid reset code");
+            }
 
             // ✅ NEW CHECK HERE
             var isSamePassword = await _userManager.CheckPasswordAsync(user, request.NewPassword);
@@ -246,9 +409,11 @@ namespace Brainova.BLL.Services.Classes
             if (!result.Succeeded)
                 throw new BadRequestException(string.Join(",", result.Errors.Select(e => e.Description)));
 
-            // clear code
+            // clear code and the guess counter
             user.CodeResetPassword = null;
             user.CodeResetPasswordExpire = null;
+            user.ResetPasswordFailedAttempts = 0;
+            user.ResetPasswordLockedUntil = null;
 
             var updateResult = await _userManager.UpdateAsync(user);
             if (!updateResult.Succeeded)
@@ -260,7 +425,33 @@ namespace Brainova.BLL.Services.Classes
                 "<h3>Your password has been changed successfully.</h3>"
             );
 
+            _logger.LogInformation("Password reset completed for user {UserId}", user.Id);
+
             return true;
+        }
+
+        private static bool IsResetLocked(ApplicationUser user)
+            => user.ResetPasswordLockedUntil.HasValue && user.ResetPasswordLockedUntil > DateTime.UtcNow;
+
+        private static string TooManyAttemptsMessage(ApplicationUser user)
+        {
+            var remaining = (user.ResetPasswordLockedUntil ?? DateTime.UtcNow.Add(ResetLockDuration)) - DateTime.UtcNow;
+            var minutes = Math.Max(1, (int)Math.Ceiling(remaining.TotalMinutes));
+            return $"Too many wrong codes. Please request a new code in {minutes} minutes.";
+        }
+
+        // Wipes the current code and blocks new ones for ResetLockDuration. If this save fails,
+        // the counter stays above the limit, so the next attempt locks again instead of comparing.
+        private async Task LockResetsAsync(ApplicationUser user)
+        {
+            user.CodeResetPassword = null;
+            user.CodeResetPasswordExpire = null;
+            user.ResetPasswordFailedAttempts = 0;
+            user.ResetPasswordLockedUntil = DateTime.UtcNow.Add(ResetLockDuration);
+            await _userManager.UpdateAsync(user);
+
+            _logger.LogWarning("Password reset locked for user {UserId} until {LockedUntil} after {Max} wrong codes",
+                user.Id, user.ResetPasswordLockedUntil, MaxResetCodeAttempts);
         }
 
         public async Task<string> SetPasswordAsync(SetPasswordRequest request)
@@ -274,7 +465,7 @@ namespace Brainova.BLL.Services.Classes
 
             if (!result.Succeeded)
                 throw new BadRequestException(string.Join(";", result.Errors.Select(e => e.Description)));
-            
+
             await _emailSender.SendEmailAsync(
                 user.Email!,
                 "Brainova - Password set",
@@ -282,6 +473,34 @@ namespace Brainova.BLL.Services.Classes
             );
             var emailToken = await _userManager.GenerateEmailConfirmationTokenAsync(user);
             await _userManager.ConfirmEmailAsync(user, emailToken);
+
+            // -----------------------------------------------------------
+            // Real-time push: SetPassword also confirms the email as part of
+            // the flow, so this is semantically identical to ConfirmEmailAsync —
+            // admins + super-admins see the EmailConfirmed column flip live.
+            // Best-effort — the password is already set in the DB.
+            // -----------------------------------------------------------
+            try
+            {
+                var roles = await _userManager.GetRolesAsync(user);
+
+                await _notifications.NotifyAdminsUserListChangedAsync(new UserListChangePayload
+                {
+                    Kind = UserListChangeKinds.EmailConfirmed,
+                    UserId = user.Id,
+                    UserName = user.UserName,
+                    FullName = user.FullName,
+                    Role = roles.FirstOrDefault(),
+                    ByUserId = null  // self-action via email link, no admin involved
+                });
+            }
+            catch (Exception ex)
+            {
+                // Best-effort: the password is already set.
+                _logger.LogWarning(ex, "Real-time notification failed after user {UserId} set their password", user.Id);
+            }
+
+            _logger.LogInformation("User {UserId} set their password and confirmed their email", user.Id);
             return "Password set successfully.";
         }
 
@@ -301,7 +520,11 @@ namespace Brainova.BLL.Services.Classes
                 claims.Add(new Claim("Role", role));
 
             var jwtSection = _configuration.GetSection("jwtOptions");
-            var secretBase64 = jwtSection["SecretKey"] ?? throw new Exception("jwtOptions:SecretKey missing");
+            var secretBase64 = jwtSection["SecretKey"];
+            if (string.IsNullOrWhiteSpace(secretBase64))
+                throw new InvalidOperationException(
+                    "No JWT signing key is configured ('jwtOptions:SecretKey'). " +
+                    "See the Configuration section of README.md.");
 
             var keyBytes = Convert.FromBase64String(secretBase64);
             var securityKey = new SymmetricSecurityKey(keyBytes);

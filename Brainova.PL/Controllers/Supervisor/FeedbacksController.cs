@@ -40,7 +40,15 @@ namespace Brainova.PL.Controllers.Supervisor
                 return Unauthorized();
 
             var result = await _service.GetForSupervisorAsync(supervisorId, reportId);
-            return Ok(result);
+
+            // When the report or its feedback is not found we return 200 OK
+            // with data: null instead of a 404 so the frontend can treat
+            // "no feedback yet" as a normal state.
+            return Ok(new
+            {
+                success = true,
+                data = (object?)result
+            });
         }
 
         // GET: api/Supervisor/Feedbacks

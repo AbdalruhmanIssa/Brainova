@@ -2,7 +2,6 @@
 using Brainova.BLL.Services.Interface;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.ML.OnnxRuntime;
 
 namespace Brainova.PL.Controllers
 {

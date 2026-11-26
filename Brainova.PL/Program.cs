@@ -16,7 +16,6 @@ using Microsoft.AspNetCore.Identity.UI.Services;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
-using Microsoft.ML.OnnxRuntime;
 using Scalar.AspNetCore;
 using Mapster;
 
@@ -109,17 +108,6 @@ builder.Services.AddSignalR();
 builder.Services.AddScoped<INotificationService, NotificationService>();
 // Maps the JWT "Id" claim -> SignalR user id, so Clients.User(userId) works.
 builder.Services.AddSingleton<IUserIdProvider, JwtIdUserIdProvider>();
-// Register ONNX session as Singleton (heavy object)
-//builder.Services.AddSingleton(sp =>
-//{
-//    var env = sp.GetRequiredService<IWebHostEnvironment>();
-//    var modelPath = Path.Combine(env.WebRootPath, "Models", "brainova_effnetb1.onnx");
-//    return new InferenceSession(modelPath);
-//});
-
-// Register service as Scoped (your normal style)
-// 1) ONNX session as singleton
-
 
 // 2) HttpClient for Python (named client)
 builder.Services.AddScoped<IAiTumorService, AiTumorService>();

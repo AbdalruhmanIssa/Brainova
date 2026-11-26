@@ -1,0 +1,15 @@
+# gitleaks config — extends the default ruleset.
+# The commits below added real credentials to appsettings.json in Feb–Mar 2026.
+# All three (SQL password, JWT signing key, Gmail app password) were rotated on 2026-11-09,
+# so these historical findings are known and dead. Every other commit is still scanned in full.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Credentials committed Feb–Mar 2026; all rotated 2026-11-09"
+commits = [
+  "405fb47695be93299d0fe2ed003d70924707bd32",
+  "834a5e4ea1e14d26656d690f8779128e8fb09fe7",
+  "4e2d0c5e938bedd4b5072ca312bb8879342dd0f0",
+  "f28c390e3c6cd51826f4e00b3a468a42ded487d2",
+]
